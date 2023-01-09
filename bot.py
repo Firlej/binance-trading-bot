@@ -20,26 +20,28 @@ symbol = 'BTC/BUSD'
 budget = 10.25
 wait_before_new_market_order_sec = 60
 
-sell_percentage_min = 1.00001
-sell_percentage_max = 1.001
+PROFIT_MARGIN_MIN = 1.00001
+PROFIT_MARGIN_MAX = 1.001
 
 def map_range(x, a, b, y, z):
     return (x - a) * (z - y) / (b - a) + y
 
+def get_busd_balances():
+	# retrieve all open orders
+	open_orders = exchange.fetch_open_orders(symbol=symbol)
+	# calculate the total BUSD in open orders
+	total_open_order_busd = sum([order["amount"] * order["price"] for order in open_orders])
+
+	balance = exchange.fetch_balance()
+	free_busd = balance['BUSD']['free']
+	total_busd = free_busd + total_open_order_busd
+	return free_busd, total_busd
+
 def get_sell_percentage():
-    
-    # retrieve all open orders
-    open_orders = exchange.fetch_open_orders(symbol=symbol)
-    # calculate the total BUSD in open orders
-    total_open_sell_busd = sum([order["amount"] * order["price"] for order in open_orders])
-
-    # map the sell percentage to be inversely proportional to the total BUSD in the account and open sell orders
-    balance = exchange.fetch_balance()
-    available_busd = balance['BUSD']['free']
-
-    total_busd = available_busd + total_open_sell_busd
-    sell_percentage = map_range(available_busd, 0, total_busd, sell_percentage_min, sell_percentage_max)
-    return max(sell_percentage, sell_percentage_min)
+	free_busd, total_busd = get_busd_balances()
+	sell_percentage = map_range(free_busd, 0, total_busd, PROFIT_MARGIN_MIN, PROFIT_MARGIN_MAX)
+	assert sell_percentage >= 1
+	return sell_percentage
 
 def log_trade(order):
     # log completed market trades and open/completed limit orders to a CSV file
