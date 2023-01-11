@@ -72,7 +72,6 @@ def log_trade(order):
         print(f'{order["side"]} order for {order["amount"]} BTC at a price of {order["price"]} for a value of {(order["price"] * order["amount"])}. status: {order["status"]}')
         writer.writerow(d)
 
-
 def market_buy(budget):
     # place a market buy order for the specified budget
     order = exchange.create_order(symbol, 'market', 'buy', None, None, {'cost': budget})
@@ -109,8 +108,6 @@ def limit_buy(order):
     thread = threading.Thread(target=check_for_completed_order, args=(buy_order,))
     thread.start()
 
-
-
 def check_for_completed_order(order):
     # check if the limit sell order has been completed every 5 seconds
     timer = 5
@@ -129,7 +126,6 @@ def check_for_completed_order(order):
         if timer < 60:
             timer += 1
         time.sleep(timer)
-
 
 def cancel_buy_orders():
     # Get a list of open orders
