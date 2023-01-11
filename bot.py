@@ -18,7 +18,9 @@ exchange = ccxt.binance({
 symbol = 'BTC/BUSD'
 
 budget = 10.25
-wait_before_new_market_order_sec = 60
+
+SLEEP_MIN = 60
+SLEEP_MAX = 60 * 10
 
 PROFIT_MARGIN_MIN = 1.00001
 PROFIT_MARGIN_MAX = 1.001
@@ -42,6 +44,12 @@ def get_sell_percentage():
 	sell_percentage = map_range(free_busd, 0, total_busd, PROFIT_MARGIN_MIN, PROFIT_MARGIN_MAX)
 	assert sell_percentage >= 1
 	return sell_percentage
+
+def get_sleep_scaled():
+	free_busd, total_busd = get_busd_balances()
+	sleep_scaled = map_range(free_busd, 0, total_busd, SLEEP_MAX, SLEEP_MIN)
+	assert sleep_scaled >= SLEEP_MIN
+	return sleep_scaled
 
 def log_trade(order):
     # log completed market trades and open/completed limit orders to a CSV file
@@ -142,19 +150,21 @@ def get_seconds_since_last_trade() -> float:
 
 while True:
 
-    seconds_since_last_trade = get_seconds_since_last_trade()
-    if seconds_since_last_trade > wait_before_new_market_order_sec:
+	seconds_since_last_trade = get_seconds_since_last_trade()
+	sleep_timer = get_sleep_scaled()
+	if seconds_since_last_trade > sleep_timer:
 
-        # check the available balance of BUSD in the account
-        balance = exchange.fetch_balance()
-        available_busd = balance['BUSD']['free']
+		# check the available balance of BUSD in the account
+		balance = exchange.fetch_balance()
+		available_busd = balance['BUSD']['free']
 
-        if available_busd < budget:
-            print(f'Not enough BUSD in the account. Available balance: {available_busd} BUSD')
-        else:
-            # buy `budget` worth of bitcoin
-            initial_buy_order = market_buy(budget)
-        
-        seconds_since_last_trade = 0
+		if available_busd < budget:
+			print(f'Not enough BUSD in the account. Available balance: {available_busd} BUSD')
+		else:
+			# buy `budget` worth of bitcoin
+			initial_buy_order = market_buy(budget)
+		
+		seconds_since_last_trade = 0
 
-    time.sleep(wait_before_new_market_order_sec - seconds_since_last_trade + 1)
+	print("sleeping for: ", sleep_timer - seconds_since_last_trade + 1)
+	time.sleep(sleep_timer - seconds_since_last_trade + 1)
