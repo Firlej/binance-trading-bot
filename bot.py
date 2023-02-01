@@ -45,7 +45,7 @@ def market_buy(budget):
         limit_sell(order)
 
     except ccxt.errors.InsufficientFunds:
-        print("Insufficient funds")
+        print("Insufficient funds for market buy")
         return
 
 
@@ -74,7 +74,7 @@ def limit_buy(order):
 
         # create a separate thread for checking for completed limit orders
         threading.Thread(target=check_for_completed_order, args=(buy_order,)).start()
-        threading.Thread(target=cancel_order, args=(buy_order, fetcher.scale_by_balance(SLEEP_MAX, SLEEP_MIN) + 1,)).start()
+        threading.Thread(target=cancel_order, args=(exchange, symbol, buy_order, fetcher.scale_by_balance(SLEEP_MAX, SLEEP_MIN) + 1,)).start()
 
     except ccxt.errors.InsufficientFunds:
         print("Insufficient funds")
@@ -109,16 +109,7 @@ while True:
     sleep_timer = fetcher.scale_by_balance(SLEEP_MAX, SLEEP_MIN)
     if seconds_since_last_trade > sleep_timer:
 
-        # check the available balance of BUSD in the account
-        balance = exchange.fetch_balance()
-        available_busd = balance["BUSD"]["free"]
-
-        if available_busd < budget:
-            print(f"Not enough BUSD in the account. Available balance: {available_busd} BUSD")
-        else:
-            # buy `budget` worth of bitcoin
-            initial_buy_order = market_buy(budget)
-
+        market_buy(budget)
         seconds_since_last_trade = 0
 
     print("sleeping for: ", sleep_timer - seconds_since_last_trade + 1)

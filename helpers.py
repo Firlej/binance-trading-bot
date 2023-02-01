@@ -53,6 +53,7 @@ class Fetcher():
     def seconds_since_last_trade(self):
         trades = self.exchange.fetch_my_trades(self.symbol, limit=1)
         if len(trades) == 0:
+            print("No trades found in seconds_since_last_trade. Returning 0.")
             return 0
         else:
             return time.time() - trades[0]["timestamp"] // 1000
