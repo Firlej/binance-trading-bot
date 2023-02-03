@@ -14,9 +14,25 @@ rm -rf venv && python3 -m venv venv && source venv/bin/activate && pip install -
 ```
 
 ```
-pip install python-dotenv asyncio ccxt
+pip install ccxt asyncio python-dotenv
 ```
 
 ```
 pip freeze > requirements.txt
+```
+
+```
+sudo docker build -t binance-trading-bot .
+```
+
+```
+sudo docker run \
+--env-file .env \
+--rm \
+--detach \
+--name btcbusd binance-trading-bot
+```
+
+```
+sudo docker container kill $(sudo docker ps -aqf "name=btcbusd*")
 ```

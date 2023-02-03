@@ -1,6 +1,7 @@
 import time
 import os
 import threading
+import math
 
 import ccxt
 
@@ -11,31 +12,43 @@ from helpers import *
 # load the .env file
 load_dotenv()
 
+############################################
+
+symbol = "BTC/BUSD"
+
+SLEEP_MIN = 60 * 5
+SLEEP_MAX = 60 * 20
+
+PROFIT_MARGIN_MIN = 1.0001
+PROFIT_MARGIN_MAX = 1.002
+
+############################################
+
 # define the exchange and the markets you want to trade on
 exchange = ccxt.binance({
     "apiKey": os.getenv("API_KEY"),
     "secret": os.getenv("API_SECRET")
 })
 
-symbol = "BTC/BUSD"
+# Load the market
+market = exchange.load_markets()[symbol]
+min_cost = market['limits']['cost']['min']
+min_amount = market['limits']['amount']['min']
 
 fetcher = Fetcher(exchange, symbol)
 
-budget = 10.25
-
-SLEEP_MIN = 60
-SLEEP_MAX = 60 * 20
-
-PROFIT_MARGIN_MIN = 1.00001
-PROFIT_MARGIN_MAX = 1.002
-
-# place a market buy order for the specified budget
-def market_buy(budget):
+# place a market buy order for the min amount
+def market_buy():
 
     try:
-        # place a market buy order for the specified budget
+
+        # recalculate the minimum amount to buy based on the current price
+        price = exchange.fetch_ticker(symbol)["last"]
+        amount = math.ceil(min_cost / price / min_amount) * min_amount
+
+        # place a market buy order for the min amount
         order = exchange.create_order(
-            symbol, "market", "buy", None, None, {"cost": budget}
+            symbol=symbol, type="market", side="buy", amount=amount
         )
 
         # log the market buy order
@@ -109,7 +122,7 @@ while True:
     sleep_timer = fetcher.scale_by_balance(SLEEP_MAX, SLEEP_MIN)
     if seconds_since_last_trade > sleep_timer:
 
-        market_buy(budget)
+        market_buy()
         seconds_since_last_trade = 0
 
     print("sleeping for: ", sleep_timer - seconds_since_last_trade + 1)
