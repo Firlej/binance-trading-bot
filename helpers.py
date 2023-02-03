@@ -1,6 +1,7 @@
 import time
 import csv
 import threading
+import math
 
 import ccxt
 import ccxt.pro as ccxtpro
@@ -16,6 +17,20 @@ class Fetcher():
 
         self.exchange = exchange
         self.symbol = symbol
+
+        self.market = self.exchange.load_markets()[self.symbol]
+    
+    def price(self):
+        return self.exchange.fetch_ticker(self.symbol)['last']
+
+    def min_cost(self):
+        return self.market['limits']['cost']['min']
+    
+    def min_amount(self):
+        return self.market['limits']['amount']['min']
+
+    def min_order_amount(self):
+        return math.ceil(self.min_cost() / self.price() / self.min_amount()) * self.min_amount()
     
     def open_orders(self):
         return self.exchange.fetch_open_orders(self.symbol)

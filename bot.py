@@ -1,7 +1,6 @@
 import time
 import os
 import threading
-import math
 
 import ccxt
 
@@ -30,11 +29,6 @@ exchange = ccxt.binance({
     "secret": os.getenv("API_SECRET")
 })
 
-# Load the market
-market = exchange.load_markets()[symbol]
-min_cost = market['limits']['cost']['min']
-min_amount = market['limits']['amount']['min']
-
 fetcher = Fetcher(exchange, symbol)
 
 # place a market buy order for the min amount
@@ -42,9 +36,8 @@ def market_buy():
 
     try:
 
-        # recalculate the minimum amount to buy based on the current price
-        price = exchange.fetch_ticker(symbol)["last"]
-        amount = math.ceil(min_cost / price / min_amount) * min_amount
+        # get min_order_amount based on the current price, min_cost, and min_amount
+        amount = fetcher.min_order_amount()
 
         # place a market buy order for the min amount
         order = exchange.create_order(
@@ -114,6 +107,7 @@ def check_for_completed_order(order):
         time.sleep(timer)
 
 
+print("Starting main loop...")
 
 # main loop
 while True:
