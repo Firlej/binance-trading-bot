@@ -1,11 +1,11 @@
 __pycache__
-.env
-.vscode/
+.vscode
 venv
 .git
-.gitignore
 LICENSE
 README.md
 Dockerfile
+.gitignore
+.env*
 *.csv
 *.json

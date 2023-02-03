@@ -1,4 +1,5 @@
 venv
-.env
 .vscode
 __pycache__
+.env*
+!.env.example
