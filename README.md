@@ -34,5 +34,20 @@ sudo docker run \
 ```
 
 ```
+sudo docker container kill $(sudo docker ps -aqf "name=btcbusd*") && sudo docker build -t binance-trading-bot . && sudo docker run --env-file .env --rm --detach --name btcbusd binance-trading-bot
+```
+
+```
 sudo docker container kill $(sudo docker ps -aqf "name=btcbusd*")
+```
+
+
+```
+sudo docker logs $(sudo docker ps -aqf "name=btcbusd*")
+```
+
+
+Delete all containers and images
+```
+sudo docker rm -f $(sudo docker ps -aq) && sudo docker rmi $(sudo docker images -q)
 ```
