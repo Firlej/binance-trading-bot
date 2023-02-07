@@ -60,7 +60,7 @@ class Fetcher():
     def scale_by_balance(self, x, y):
         free_busd, total_busd = self.busd_balance()
         sell_btc_value = self.sell_btc_value()
-        scaled_value =  map_range(free_busd, 0, total_busd + sell_btc_value, x, y)
+        scaled_value = map_range(free_busd, 0, total_busd + sell_btc_value, x, y)
         assert min(x, y) <= scaled_value <= max(x, y)
         return scaled_value
     
@@ -68,35 +68,10 @@ class Fetcher():
     def seconds_since_last_trade(self):
         trades = self.exchange.fetch_my_trades(self.symbol, limit=1)
         if len(trades) == 0:
-            print("No trades found in seconds_since_last_trade. Returning 0.")
-            return 0
+            print("No trades found in seconds_since_last_trade. Returning float(\"inf\")")
+            return float("inf")
         else:
             return time.time() - trades[0]["timestamp"] // 1000
-
-
-# cancel an order with a timeout
-def cancel_order(exchange, symbol, order, timeout=0):
-    assert isinstance(exchange, ccxt.binance)
-
-    time.sleep(timeout)
-
-    try:
-        canceled_order = exchange.cancel_order(order["id"], symbol=symbol)
-        return canceled_order
-    except ccxt.errors.OrderNotFound:
-        pass
-
-# cancel all open buy orders except the one with the highest buy price
-def cancel_buy_orders(fetcher):
-    assert isinstance(fetcher, Fetcher)
-
-    open_buy_orders = fetcher.open_buy_orders()
-
-    if len(open_buy_orders) == 0:
-        return
-
-    for order in open_buy_orders:
-        cancel_order(order)
 
 def log_trade(order):
     with open("trades.csv", "a", newline="") as csvfile:
@@ -129,3 +104,28 @@ def log_trade(order):
             f'{d["timestamp"]} | {d["side"]} for {d["amount"]} BTC at a price of {d["price"]} for a value of {(d["cost"])}. status: {d["status"]}'
         )
         writer.writerow(d)
+
+# cancel an order with a timeout
+def cancel_order(exchange, symbol, order, timeout=0):
+    assert isinstance(exchange, ccxt.binance)
+
+    time.sleep(timeout)
+
+    try:
+        canceled_order = exchange.cancel_order(order["id"], symbol=symbol)
+        log_trade(canceled_order)
+        return canceled_order
+    except ccxt.errors.OrderNotFound:
+        pass
+
+# cancel all open buy orders except the one with the highest buy price
+def cancel_buy_orders(fetcher):
+    assert isinstance(fetcher, Fetcher)
+
+    open_buy_orders = fetcher.open_buy_orders()
+
+    if len(open_buy_orders) == 0:
+        return
+
+    for order in open_buy_orders:
+        cancel_order(order)
