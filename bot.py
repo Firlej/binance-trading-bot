@@ -33,7 +33,6 @@ fetcher = Fetcher(exchange, symbol)
 
 # cancel an order with a timeout
 def cancel_order(order, timeout=0):
-    assert isinstance(exchange, ccxt.binance)
 
     time.sleep(timeout)
 
@@ -110,9 +109,9 @@ def limit_buy(order):
         return
 
 # periodically check for completed order
-def check_for_completed_order(order):
+def check_for_completed_order(order, start_time=1):
     # periodically check if the order has been completed
-    timer = 1
+    timer = start_time
     while True:
         # pass the symbol argument
         order = exchange.fetch_order(order["id"], symbol)
@@ -124,23 +123,45 @@ def check_for_completed_order(order):
                 limit_buy(order)
             return
         elif order["status"] == "canceled":
+            log_trade(order)
             return
-        if timer < 60:
+        if timer < 120:
             timer += 1
         time.sleep(timer)
+        
+def watch_currently_open_sell_orders():
+    open_sell_orders = fetcher.open_sell_orders()
+    
+    for i, order in enumerate(open_sell_orders):
+        threading.Thread(target=check_for_completed_order, args=(order, i+1)).start()
+    
+    print(f"Watching {len(open_sell_orders)} currently open sell orders...")
 
+def cancel_all_open_buy_orders():
+    open_buy_orders = fetcher.open_buy_orders()
+    
+    for order in open_buy_orders:
+        cancel_order(order)
 
-print("Starting main loop...")
+    print(f"Canceled {len(open_buy_orders)} currently open buy orders...")
 
-# main loop
-while True:
+def main():
 
-    seconds_since_last_trade = fetcher.seconds_since_last_trade()
-    sleep_timer = fetcher.scale_by_balance(SLEEP_MAX, SLEEP_MIN)
-    if seconds_since_last_trade > sleep_timer:
+    print("Starting main loop...")
 
-        market_buy()
-        seconds_since_last_trade = 0
+    while True:
 
-    print("sleeping for:", sleep_timer - seconds_since_last_trade + 1)
-    time.sleep(sleep_timer - seconds_since_last_trade + 1)
+        seconds_since_last_trade = fetcher.seconds_since_last_trade()
+        sleep_timer = fetcher.scale_by_balance(SLEEP_MAX, SLEEP_MIN)
+        if seconds_since_last_trade > sleep_timer:
+
+            market_buy()
+            seconds_since_last_trade = 0
+
+        print("sleeping for:", sleep_timer - seconds_since_last_trade + 1)
+        time.sleep(sleep_timer - seconds_since_last_trade + 1)
+
+if __name__ == "__main__":
+    cancel_all_open_buy_orders()
+    watch_currently_open_sell_orders()
+    main()
