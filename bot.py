@@ -31,13 +31,27 @@ exchange = ccxt.binance({
 
 fetcher = Fetcher(exchange, symbol)
 
+# cancel an order with a timeout
+def cancel_order(order, timeout=0):
+    assert isinstance(exchange, ccxt.binance)
+
+    time.sleep(timeout)
+
+    try:
+        canceled_order = exchange.cancel_order(order["id"], symbol=symbol)
+        log_trade(canceled_order)
+        return canceled_order
+    except ccxt.errors.OrderNotFound:
+        return
+
 # place a market buy order for the min amount
 def market_buy():
 
     try:
 
         # get min_order_amount based on the current price, min_cost, and min_amount
-        amount = fetcher.min_order_amount()
+        price = fetcher.price()
+        amount = fetcher.min_order_amount(price)
 
         # place a market buy order for the min amount
         order = exchange.create_order(
@@ -53,14 +67,22 @@ def market_buy():
     except ccxt.errors.InsufficientFunds:
         print("Insufficient funds for market buy")
         return
+    except ccxt.errors.InvalidOrder as e:
+        print(f"Tried to market buy {amount} at ~{price} for total: ~{price * amount} but got an error: {str(e)}")
+        print("Trying again in 1 second...")
+        time.sleep(1)
+        market_buy()
 
 
 # place a limit sell order for the amount of BTC that was bought
 def limit_sell(order):
     sell_price = order["price"] * fetcher.scale_by_balance(PROFIT_MARGIN_MIN, PROFIT_MARGIN_MAX)
     sell_amount = order["filled"]
-    sell_order = exchange.create_order(symbol, "limit", "sell", sell_amount, sell_price)
-    log_trade(sell_order)  # log limit sell opened
+    sell_order = exchange.create_order(
+        symbol=symbol, type="limit", side="sell", amount=sell_amount, price=sell_price
+    )
+    
+    log_trade(sell_order)
 
     # create a separate thread for checking for completed limit sell orders
     threading.Thread(target=check_for_completed_order, args=(sell_order,)).start()
@@ -73,17 +95,18 @@ def limit_buy(order):
     buy_amount = order["filled"]
 
     try:
-        buy_order = exchange.create_order(symbol, "limit", "buy", buy_amount, buy_price)
+        buy_order = exchange.create_order(
+            symbol=symbol, type="limit", side="buy", amount=buy_amount, price=buy_price
+        )
 
-        # create a separate thread for checking for completed orders
-        log_trade(buy_order)  # log limit opened opened
+        log_trade(buy_order)
 
         # create a separate thread for checking for completed limit orders
         threading.Thread(target=check_for_completed_order, args=(buy_order,)).start()
-        threading.Thread(target=cancel_order, args=(exchange, symbol, buy_order, fetcher.scale_by_balance(SLEEP_MAX, SLEEP_MIN) + 1,)).start()
+        threading.Thread(target=cancel_order, args=(buy_order, SLEEP_MAX + 1)).start()
 
     except ccxt.errors.InsufficientFunds:
-        print("Insufficient funds")
+        print(f'Insufficient funds for limit buy of {buy_amount} at {buy_price} for total: {buy_price * buy_amount}')
         return
 
 # periodically check for completed order
@@ -119,5 +142,5 @@ while True:
         market_buy()
         seconds_since_last_trade = 0
 
-    print("sleeping for: ", sleep_timer - seconds_since_last_trade + 1)
+    print("sleeping for:", sleep_timer - seconds_since_last_trade + 1)
     time.sleep(sleep_timer - seconds_since_last_trade + 1)
