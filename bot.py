@@ -1,6 +1,7 @@
 import time
 import os
 import threading
+import requests
 
 import ccxt
 
@@ -15,11 +16,14 @@ load_dotenv()
 
 symbol = "BTC/BUSD"
 
-SLEEP_MIN = 60 * 5
-SLEEP_MAX = 60 * 20
+SLEEP_MIN = int(os.getenv("SLEEP_MIN"))
+SLEEP_MAX = int(os.getenv("SLEEP_MAX"))
 
-PROFIT_MARGIN_MIN = 1.0001
-PROFIT_MARGIN_MAX = 1.002
+PROFIT_MARGIN_MIN = float(os.getenv("PROFIT_MARGIN_MIN"))
+PROFIT_MARGIN_MAX = float(os.getenv("PROFIT_MARGIN_MAX"))
+
+print(f"SLEEP_MIN: {SLEEP_MIN} SLEEP_MAX: {SLEEP_MAX}")
+print(f"PROFIT_MARGIN_MIN: {PROFIT_MARGIN_MIN} PROFIT_MARGIN_MAX: {PROFIT_MARGIN_MAX}")
 
 ############################################
 
@@ -114,20 +118,29 @@ def check_for_completed_order(order, start_time=1):
     timer = start_time
     while True:
         # pass the symbol argument
-        order = exchange.fetch_order(order["id"], symbol)
-        if order["status"] == "closed":
-            log_trade(order)
-            if order["side"] == "buy":
-                limit_sell(order)
-            else:
-                limit_buy(order)
+        try:
+            order = exchange.fetch_order(order["id"], symbol)
+            if order["status"] == "closed":
+                log_trade(order)
+                if order["side"] == "buy":
+                    limit_sell(order)
+                else:
+                    limit_buy(order)
+                return
+            elif order["status"] == "canceled":
+                log_trade(order)
+                return
+            if timer < 120:
+                timer += 1
+            time.sleep(timer)
+        except requests.exceptions.HTTPError as e:
+            print(f"check_for_completed_order requests.exceptions.HTTPError for {order['side']} order: {str(e)}")
+            check_for_completed_order(order, timer)
             return
-        elif order["status"] == "canceled":
-            log_trade(order)
+        except ccxt.errors.InvalidNonce:
+            print(f"check_for_completed_order ccxt.errors.InvalidNonce for {order['side']} order: {str(e)}")
+            check_for_completed_order(order, timer)
             return
-        if timer < 120:
-            timer += 1
-        time.sleep(timer)
         
 def watch_currently_open_sell_orders():
     open_sell_orders = fetcher.open_sell_orders()
@@ -165,3 +178,4 @@ if __name__ == "__main__":
     cancel_all_open_buy_orders()
     watch_currently_open_sell_orders()
     main()
+    pass
