@@ -35,17 +35,88 @@ exchange = ccxt.binance({
 
 fetcher = Fetcher(exchange, symbol)
 
+############################################
+
+orders = { order["id"]: order for order in fetcher.open_orders() }
+
+exit_flag = False
+
+def watch_open_orders():
+    print(f"watch_open_orders started")
+    
+    while True:
+        
+        if exit_flag:
+            return
+        
+        global orders
+        
+        # filter orders to only keeps sell orders
+        sell_orders = { order["id"]: order for order in orders.values() if order["side"] == "sell" }
+        if len(sell_orders) > 0:    
+            # get open sell order with lowest sell price
+            order = min(sell_orders.values(), key=lambda order: order["price"])
+            process_order_update(order)
+        
+        # filter orders to only keeps sell orders
+        buy_orders = { order["id"]: order for order in orders.values() if order["side"] == "buy" }
+        if len(buy_orders) > 0:        
+            # get open sell order with lowest sell price
+            order = max(buy_orders.values(), key=lambda order: order["price"])
+            process_order_update(order)
+        
+        time.sleep(1)
+
+def process_order_update(order):
+    try:
+        order = exchange.fetch_order(order["id"], symbol)
+        if order["status"] == "closed":
+            log_trade(order)
+            del orders[order["id"]]
+            if order["side"] == "buy":
+                limit_sell(order)
+            else:
+                limit_buy(order)
+        elif order["status"] == "canceled":
+            log_trade(order)
+            del orders[order["id"]]
+    except requests.exceptions.HTTPError as e:
+        print(f"process_order_update requests.exceptions.HTTPError for {order['side']} order: {str(e)}")
+        # sleep for and additional 10 seconds
+        time.sleep(10)
+    except ccxt.errors.InvalidNonce as e:
+        print(f"process_order_update ccxt.errors.InvalidNonce for {order['side']} order: {str(e)}")
+        # sleep for and additional 10 seconds
+        time.sleep(10)
+    except KeyError as e:
+        print(f"process_order_update KeyError for {order['side']} order: {str(e)}")
+        pass
+
+############################################
+
 # cancel an order with a timeout
 def cancel_order(order, timeout=0):
-
-    time.sleep(timeout)
+    
+    # split sleep into 1 second intervals to allow for exit_flag to be checked
+    for _ in range(int(timeout)):
+        if exit_flag:
+            return
+        time.sleep(1)
 
     try:
         canceled_order = exchange.cancel_order(order["id"], symbol=symbol)
         log_trade(canceled_order)
+        
+        global orders
+        del orders[canceled_order["id"]]
+        
         return canceled_order
     except ccxt.errors.OrderNotFound:
-        return
+        pass
+    except KeyError:
+        pass
+
+############################################
 
 # place a market buy order for the min amount
 def market_buy():
@@ -79,76 +150,60 @@ def market_buy():
 
 # place a limit sell order for the amount of BTC that was bought
 def limit_sell(order):
-    sell_price = order["price"] * fetcher.scale_by_balance(PROFIT_MARGIN_MIN, PROFIT_MARGIN_MAX)
-    sell_amount = order["filled"]
-    sell_order = exchange.create_order(
-        symbol=symbol, type="limit", side="sell", amount=sell_amount, price=sell_price
-    )
-    
-    log_trade(sell_order)
+    try:
+        
+        sell_price = order["price"] * fetcher.scale_by_balance(PROFIT_MARGIN_MIN, PROFIT_MARGIN_MAX)
+        sell_amount = order["filled"]
+        
+        sell_order = exchange.create_order(
+            symbol=symbol, type="limit", side="sell", amount=sell_amount, price=sell_price
+        )
+        
+        log_trade(sell_order)
+        
+        # if status closed then immediately buy back
+        if sell_order["status"] == "closed":
+            limit_buy(sell_order)
+            return
 
-    # create a separate thread for checking for completed limit sell orders
-    threading.Thread(target=check_for_completed_order, args=(sell_order,)).start()
+        global orders
+        orders[sell_order["id"]] = sell_order
+
+    except ccxt.errors.InsufficientFunds:
+        print(f'Insufficient funds for limit sell of {sell_amount} at {sell_price} for total: {sell_price * sell_amount}')
+        return
 
 
 # place a limit buy order for the amount of BTC that was sold
 def limit_buy(order):
-
-    buy_price = order["price"] / fetcher.scale_by_balance(PROFIT_MARGIN_MIN, PROFIT_MARGIN_MAX)
-    buy_amount = order["filled"]
-
     try:
+
+        buy_price = order["price"] / fetcher.scale_by_balance(PROFIT_MARGIN_MIN, PROFIT_MARGIN_MAX)
+        buy_amount = order["filled"]
+        
         buy_order = exchange.create_order(
             symbol=symbol, type="limit", side="buy", amount=buy_amount, price=buy_price
         )
 
         log_trade(buy_order)
+        
+        # if status closed then immediately buy back
+        if buy_order["status"] == "closed":
+            limit_sell(buy_order)
+            return
 
-        # create a separate thread for checking for completed limit orders
-        threading.Thread(target=check_for_completed_order, args=(buy_order,)).start()
+        global orders
+        orders[buy_order["id"]] = buy_order
+        
         threading.Thread(target=cancel_order, args=(buy_order, SLEEP_MAX + 1)).start()
 
     except ccxt.errors.InsufficientFunds:
         print(f'Insufficient funds for limit buy of {buy_amount} at {buy_price} for total: {buy_price * buy_amount}')
         return
-
-# periodically check for completed order
-def check_for_completed_order(order, start_time=1):
-    # periodically check if the order has been completed
-    timer = start_time
-    while True:
-        # pass the symbol argument
-        try:
-            order = exchange.fetch_order(order["id"], symbol)
-            if order["status"] == "closed":
-                log_trade(order)
-                if order["side"] == "buy":
-                    limit_sell(order)
-                else:
-                    limit_buy(order)
-                return
-            elif order["status"] == "canceled":
-                log_trade(order)
-                return
-            if timer < 120:
-                timer += 1
-            time.sleep(timer)
-        except requests.exceptions.HTTPError as e:
-            print(f"check_for_completed_order requests.exceptions.HTTPError for {order['side']} order: {str(e)}")
-            check_for_completed_order(order, timer)
-            return
-        except ccxt.errors.InvalidNonce:
-            print(f"check_for_completed_order ccxt.errors.InvalidNonce for {order['side']} order: {str(e)}")
-            check_for_completed_order(order, timer)
-            return
-        
-def watch_currently_open_sell_orders():
-    open_sell_orders = fetcher.open_sell_orders()
-    
-    for i, order in enumerate(open_sell_orders):
-        threading.Thread(target=check_for_completed_order, args=(order, i+1)).start()
-    
-    print(f"Watching {len(open_sell_orders)} currently open sell orders...")
+    except ccxt.errors.InvalidOrder as e:
+        print(f"Tried to limit buy {buy_amount} at ~{buy_price} for total: ~{buy_price * buy_amount} but got an error: {str(e)}")
+        print("Trying again in 1 second...")
+        time.sleep(1)
 
 def cancel_all_open_buy_orders():
     open_buy_orders = fetcher.open_buy_orders()
@@ -170,12 +225,23 @@ def main():
 
             market_buy()
             seconds_since_last_trade = 0
-
-        print("sleeping for:", sleep_timer - seconds_since_last_trade + 1)
-        time.sleep(sleep_timer - seconds_since_last_trade + 1)
+        
+        sleeping_for = int(sleep_timer - seconds_since_last_trade + 1)
+        ts = exchange.iso8601(exchange.milliseconds())
+        ts_unitl = exchange.iso8601(exchange.milliseconds() + sleeping_for * 1000)
+        print(f"{ts} | Sleeping until {ts_unitl}... ({sleeping_for} seconds)")
+        time.sleep(sleeping_for)
 
 if __name__ == "__main__":
     cancel_all_open_buy_orders()
-    watch_currently_open_sell_orders()
-    main()
+
+    threading.Thread(target=watch_open_orders).start()
+    
+    try:
+        main()
+    except KeyboardInterrupt:
+        exit_flag = True
+        print("KeyboardInterrupt detected. Cancelling all open buy orders...")
+        cancel_all_open_buy_orders()
+        print("Exiting...")
     pass
