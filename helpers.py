@@ -2,9 +2,16 @@ import time
 import csv
 import threading
 import math
+from decimal import Decimal
 
 import ccxt
 import ccxt.pro as ccxtpro
+
+def decimal_precision(f):
+    return abs(Decimal(str(f)).as_tuple().exponent)
+
+def round_up_to_n_decimal_places(f, n):
+    return math.ceil(f * 10**n) / 10**n
 
 # map a range of values to another range of values
 def map_range(x, a, b, y, z):
@@ -77,11 +84,15 @@ class Fetcher():
             return float("inf")
         else:
             return time.time() - trades[0]["timestamp"] // 1000
+        
+    def order(self, order):
+        return self.exchange.fetch_order(order["id"], self.symbol)
 
 def log_trade(order):
     with open("trades.csv", "a", newline="") as csvfile:
         
         d = {
+            "id": order["id"],
             "timestamp": order["timestamp"],
             "datetime": order["datetime"],
             "type": order["type"],
@@ -97,7 +108,7 @@ def log_trade(order):
         writer = csv.DictWriter(csvfile, fieldnames=d.keys())  
         
         print(
-            f'{d["datetime"]} | {d["type"]:<6} | {d["side"]:<4} | {d["amount"]:<7} | {d["price"]:<8} | {d["cost"]:<18} | {d["status"]:<6}'
+            f'{d["datetime"]} | {d["id"]} | {d["type"].upper():<6} | {d["side"].upper():<4} | {d["amount"]:<7} | {d["price"]:<8} | {d["cost"]:<18} | {d["status"]:<6}'
         )
         
         writer.writerow(d)
