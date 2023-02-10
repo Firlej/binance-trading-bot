@@ -87,6 +87,31 @@ class Fetcher():
         
     def order(self, order):
         return self.exchange.fetch_order(order["id"], self.symbol)
+    
+    def status(self):
+        orders = self.open_orders()
+        buy_orders = [o for o in orders if o["side"] == "buy"]
+        sell_orders = [o for o in orders if o["side"] == "sell"]
+        
+        sell_btc_amount = 0 if len(sell_orders) == 0 else sum([o["amount"] for o in sell_orders])
+        sell_btc_value = 0 if len(sell_orders) == 0 else sum([o["price"] * o["amount"] for o in sell_orders])
+        curr_sell_value = 0 if len(sell_orders) == 0 else sell_btc_amount * self.price()
+        
+        free_busd, total_busd = self.busd_balance()
+        free_balance_percent = map_range(free_busd, 0, total_busd + sell_btc_value, 0, 100)
+        
+        prices = [o['price'] for o in sell_orders]
+        p_max = max(prices) if len(prices) > 0 else 0
+        p_min = min(prices) if len(prices) > 0 else 0
+        
+        print(f'''
+    {self.exchange.iso8601(self.exchange.milliseconds())}
+    Available balances | {"{:.2f}".format(free_busd)} / {"{:.2f}".format(total_busd + sell_btc_value)} BUSD ({"{:.2f}".format(free_balance_percent)}%) | {"{:.5f}".format(sell_btc_amount)} BTC
+    BTC value          | Expected: {"{:.2f}".format(sell_btc_value)} | Current: {"{:.2f}".format(curr_sell_value)} | Curr loss: {"{:.2f}".format(curr_sell_value - sell_btc_value)}
+    Open orders        | {len(buy_orders)} buy | {len(sell_orders)} sell | {len(orders)} total
+    Sell prices        | Min: {p_min} | Max: {p_max} | Diff: {round(p_max - p_min, 2)} ({round((p_max - p_min) / p_min * 100, 2)}%)
+        ''')
+
 
 def log_trade(order):
     with open("trades.csv", "a", newline="") as csvfile:

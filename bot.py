@@ -9,10 +9,32 @@ from dotenv import load_dotenv
 
 from helpers import *
 
-# load the .env file
-load_dotenv()
+
+import signal
+exit_flag = False
+
+def end():
+    global exit_flag
+    exit_flag = True
+    print("Cancelling all open buy orders...")
+    cancel_all_open_buy_orders()
+    print("Exiting...")
+
+def exit_flag_trueSIGINT(signal, frame):
+    print("SIGINT detected. Ending...")
+    end()
+
+def exit_flag_trueSIGTERM(signal, frame):
+    print("SIGTERM detected. Ending...")
+    end()
+
+signal.signal(signal.SIGINT, exit_flag_trueSIGINT)
+signal.signal(signal.SIGTERM, exit_flag_trueSIGTERM)
 
 ############################################
+
+# load the .env file
+load_dotenv()
 
 symbol = "BTC/BUSD"
 
@@ -38,8 +60,6 @@ fetcher = Fetcher(exchange, symbol)
 ############################################
 
 orders = { order["id"]: order for order in fetcher.open_orders() }
-
-exit_flag = False
 
 def watch_open_orders():
     print(f"watch_open_orders started")
@@ -225,23 +245,23 @@ def main():
 
             market_buy()
             seconds_since_last_trade = 0
+            
+            fetcher.status()
         
         sleeping_for = int(sleep_timer - seconds_since_last_trade + 1)
         ts = exchange.iso8601(exchange.milliseconds())
         ts_unitl = exchange.iso8601(exchange.milliseconds() + sleeping_for * 1000)
         print(f"{ts} | Sleeping until {ts_unitl}... ({sleeping_for} seconds)")
-        time.sleep(sleeping_for)
+        
+        # split sleep into 1 second intervals to allow for exit_flag to be checked
+        for _ in range(int(sleeping_for)):
+            if exit_flag:
+                return
+            time.sleep(1)
 
 if __name__ == "__main__":
     cancel_all_open_buy_orders()
 
     threading.Thread(target=watch_open_orders).start()
     
-    try:
-        main()
-    except KeyboardInterrupt:
-        exit_flag = True
-        print("KeyboardInterrupt detected. Cancelling all open buy orders...")
-        cancel_all_open_buy_orders()
-        print("Exiting...")
-    pass
+    main()
