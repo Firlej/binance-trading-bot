@@ -49,17 +49,15 @@ print(f"PROFIT_MARGIN_MIN: {PROFIT_MARGIN_MIN} PROFIT_MARGIN_MAX: {PROFIT_MARGIN
 
 ############################################
 
-# define the exchange and the markets you want to trade on
 exchange = ccxt.binance({
     "apiKey": os.getenv("API_KEY"),
     "secret": os.getenv("API_SECRET")
 })
 
 fetcher = Fetcher(exchange, symbol)
+order_monitor = OrderMonitor(exchange, symbol)
 
 ############################################
-
-orders = { order["id"]: order for order in fetcher.open_orders() }
 
 def watch_open_orders():
     print(f"watch_open_orders started")
@@ -69,21 +67,15 @@ def watch_open_orders():
         if exit_flag:
             return
         
-        global orders
-        
-        # filter orders to only keeps sell orders
-        sell_orders = { order["id"]: order for order in orders.values() if order["side"] == "sell" }
-        if len(sell_orders) > 0:    
-            # get open sell order with lowest sell price
-            order = min(sell_orders.values(), key=lambda order: order["price"])
-            process_order_update(order)
-        
-        # filter orders to only keeps sell orders
-        buy_orders = { order["id"]: order for order in orders.values() if order["side"] == "buy" }
-        if len(buy_orders) > 0:        
-            # get open sell order with lowest sell price
-            order = max(buy_orders.values(), key=lambda order: order["price"])
-            process_order_update(order)
+        lowest_sell_order = order_monitor.get_lowest_sell_order()
+        if lowest_sell_order:
+            if process_order_update(lowest_sell_order):
+                continue
+            
+        highest_buy_order = order_monitor.get_highest_buy_order()
+        if highest_buy_order:
+            if process_order_update(highest_buy_order):
+                continue
         
         time.sleep(1)
 
@@ -91,15 +83,16 @@ def process_order_update(order):
     try:
         order = exchange.fetch_order(order["id"], symbol)
         if order["status"] == "closed":
-            log_trade(order)
-            del orders[order["id"]]
+            order_monitor.log(order)
             if order["side"] == "buy":
                 limit_sell(order)
             else:
                 limit_buy(order)
+            return True
         elif order["status"] == "canceled":
-            log_trade(order)
-            del orders[order["id"]]
+            order_monitor.log(order)
+            return True
+        return False
     except requests.exceptions.HTTPError as e:
         print(f"process_order_update requests.exceptions.HTTPError for {order['side']} order: {str(e)}")
         # sleep for and additional 10 seconds
@@ -109,8 +102,12 @@ def process_order_update(order):
         # sleep for and additional 10 seconds
         time.sleep(10)
     except KeyError as e:
-        print(f"process_order_update KeyError for {order['side']} order: {str(e)}")
-        pass
+        # if order['side'] == 'buy' then it means the order was canceled
+        if order['side'] == 'sell':
+            print(f"process_order_update KeyError for {order['side']} order: {str(e)}")
+    except TimeoutError as e:
+        print(f"process_order_update TimeoutError for {order['side']} order: {str(e)}")
+        time.sleep(10)
 
 ############################################
 
@@ -125,10 +122,7 @@ def cancel_order(order, timeout=0):
 
     try:
         canceled_order = exchange.cancel_order(order["id"], symbol=symbol)
-        log_trade(canceled_order)
-        
-        global orders
-        del orders[canceled_order["id"]]
+        order_monitor.log(canceled_order)
         
         return canceled_order
     except ccxt.errors.OrderNotFound:
@@ -153,7 +147,7 @@ def market_buy():
         )
 
         # log the market buy order
-        log_trade(order)
+        order_monitor.log(order)
 
         # place a limit sell order for the amount of BTC that was bought
         limit_sell(order)
@@ -179,15 +173,12 @@ def limit_sell(order):
             symbol=symbol, type="limit", side="sell", amount=sell_amount, price=sell_price
         )
         
-        log_trade(sell_order)
+        order_monitor.log(sell_order, order)
         
         # if status closed then immediately buy back
         if sell_order["status"] == "closed":
             limit_buy(sell_order)
             return
-
-        global orders
-        orders[sell_order["id"]] = sell_order
 
     except ccxt.errors.InsufficientFunds:
         print(f'Insufficient funds for limit sell of {sell_amount} at {sell_price} for total: {sell_price * sell_amount}')
@@ -199,29 +190,27 @@ def limit_buy(order):
     try:
 
         buy_price = order["price"] / fetcher.scale_by_balance(PROFIT_MARGIN_MIN, PROFIT_MARGIN_MAX)
-        buy_amount = order["filled"]
+        buy_amount = fetcher.min_order_amount(buy_price)
         
         buy_order = exchange.create_order(
             symbol=symbol, type="limit", side="buy", amount=buy_amount, price=buy_price
         )
 
-        log_trade(buy_order)
+        order_monitor.log(buy_order)
         
         # if status closed then immediately buy back
         if buy_order["status"] == "closed":
             limit_sell(buy_order)
             return
-
-        global orders
-        orders[buy_order["id"]] = buy_order
         
-        threading.Thread(target=cancel_order, args=(buy_order, SLEEP_MAX + 1)).start()
+        threading.Thread(target=cancel_order, args=(buy_order, SLEEP_MAX)).start()
 
     except ccxt.errors.InsufficientFunds:
         print(f'Insufficient funds for limit buy of {buy_amount} at {buy_price} for total: {buy_price * buy_amount}')
         return
     except ccxt.errors.InvalidOrder as e:
         print(f"Tried to limit buy {buy_amount} at ~{buy_price} for total: ~{buy_price * buy_amount} but got an error: {str(e)}")
+        # todo not trying actually lols
         print("Trying again in 1 second...")
         time.sleep(1)
 
@@ -246,7 +235,7 @@ def main():
             market_buy()
             seconds_since_last_trade = 0
             
-            fetcher.status()
+            order_monitor.status()
         
         sleeping_for = int(sleep_timer - seconds_since_last_trade + 1)
         ts = exchange.iso8601(exchange.milliseconds())

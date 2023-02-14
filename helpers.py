@@ -72,6 +72,8 @@ class Fetcher():
     def scale_by_balance(self, x, y):
         free_busd, total_busd = self.busd_balance()
         sell_btc_value = self.sell_btc_value()
+        
+        # todo sometimes this throws an error TypeError: can only concatenate str (not "float") to str
         scaled_value = map_range(free_busd, 0, total_busd + sell_btc_value, x, y)
         assert min(x, y) <= scaled_value <= max(x, y)
         return scaled_value
@@ -88,16 +90,117 @@ class Fetcher():
     def order(self, order):
         return self.exchange.fetch_order(order["id"], self.symbol)
     
+    def ts(self):
+        return self.exchange.iso8601(self.exchange.milliseconds())
+
+
+def log_order(order):
+    d = {
+        "id": order["id"],
+        "timestamp": order["timestamp"],
+        "datetime": order["datetime"],
+        "type": order["type"],
+        "symbol": order["symbol"],
+        "side": order["side"],
+        "price": order["price"],
+        "amount": order["amount"] if order["amount"] else order["filled"],
+        "cost": order["price"] * order["amount"],
+        "order_id": order["id"],
+        "status": order["status"],
+    }
+    print(
+        f'{d["datetime"]} | {d["id"]} | {d["type"].upper():<6} | {d["side"].upper():<4} | {d["amount"]:<7} | {d["price"]:<8} | {d["cost"]:<18} | {d["status"]:<6}'
+    )
+        
+
+
+# class to keep track of orders. open orders are stored in a dictionary and closed orders are stored in a list
+class OrderMonitor():
+    
+    # initialize the class
+    def __init__(self, exchange, symbol):
+        assert isinstance(exchange, ccxt.binance)
+        
+        self.exchange = exchange
+        self.symbol = symbol
+        
+        self.fetcher = Fetcher(self.exchange, self.symbol)
+        
+        self.open_orders = {}
+        self.closed_orders = {}
+        self.init_orders()
+        
+        # key: sell order id, value: buy order id
+        self.order_pairs = {}
+        
+        self.profit = 0.0
+        print("Initialized OrderMonitor")
+        
+    def init_orders(self):
+        for open_order in self.fetcher.open_orders():
+            self.open_orders[open_order["id"]] = open_order
+        print(f'{self.fetcher.ts()} | Initialized {len(self.open_orders)} open orders')
+    
+    def log(self, order, prev_order=None):
+        id = order["id"]
+        log_order(order)
+        
+        if prev_order:
+            self.order_pairs[id] = prev_order
+        
+        if order["status"] == "open":
+            self.open_orders[id] = order
+        elif order["status"] == "canceled":
+            
+            try:
+                del self.open_orders[id]
+                return
+            except KeyError:
+                pass
+            
+        elif order["status"] == "closed":
+            
+            # save closed order and remove from open orders
+            self.closed_orders[id] = order
+            try:
+                del self.open_orders[id]
+            except KeyError:
+                pass
+            
+            if id in self.order_pairs and prev_order is None:
+                prev_order = self.order_pairs[id]
+                assert order["side"] == "sell" and prev_order["side"] == "buy"
+                assert order["amount"] == prev_order["amount"]
+                profit = (order["price"] - prev_order["price"]) * order["amount"]
+                self.profit += profit
+                print(f'{self.fetcher.ts()} | Profit: {profit} | Total session profit: {self.profit}')
+            
+            
+
+    def get_lowest_sell_order(self):
+        sell_orders = [o for o in self.open_orders.values() if o["side"] == "sell"]
+        if len(sell_orders) == 0:
+            return None
+        else:
+            return min(sell_orders, key=lambda o: o["price"])
+    
+    def get_highest_buy_order(self):
+        buy_orders = [o for o in self.open_orders.values() if o["side"] == "buy"]
+        if len(buy_orders) == 0:
+            return None
+        else:
+            return max(buy_orders, key=lambda o: o["price"])
+    
     def status(self):
-        orders = self.open_orders()
+        orders = self.fetcher.open_orders()
         buy_orders = [o for o in orders if o["side"] == "buy"]
         sell_orders = [o for o in orders if o["side"] == "sell"]
         
         sell_btc_amount = 0 if len(sell_orders) == 0 else sum([o["amount"] for o in sell_orders])
         sell_btc_value = 0 if len(sell_orders) == 0 else sum([o["price"] * o["amount"] for o in sell_orders])
-        curr_sell_value = 0 if len(sell_orders) == 0 else sell_btc_amount * self.price()
+        curr_sell_value = 0 if len(sell_orders) == 0 else sell_btc_amount * self.fetcher.price()
         
-        free_busd, total_busd = self.busd_balance()
+        free_busd, total_busd = self.fetcher.busd_balance()
         free_balance_percent = map_range(free_busd, 0, total_busd + sell_btc_value, 0, 100)
         
         prices = [o['price'] for o in sell_orders]
@@ -105,35 +208,10 @@ class Fetcher():
         p_min = min(prices) if len(prices) > 0 else 0
         
         print(f'''
-    {self.exchange.iso8601(self.exchange.milliseconds())}
+    {self.fetcher.ts()}
     Available balances | {"{:.2f}".format(free_busd)} / {"{:.2f}".format(total_busd + sell_btc_value)} BUSD ({"{:.2f}".format(free_balance_percent)}%) | {"{:.5f}".format(sell_btc_amount)} BTC
     BTC value          | Expected: {"{:.2f}".format(sell_btc_value)} | Current: {"{:.2f}".format(curr_sell_value)} | Curr loss: {"{:.2f}".format(curr_sell_value - sell_btc_value)}
     Open orders        | {len(buy_orders)} buy | {len(sell_orders)} sell | {len(orders)} total
     Sell prices        | Min: {p_min} | Max: {p_max} | Diff: {round(p_max - p_min, 2)} ({round((p_max - p_min) / p_min * 100, 2)}%)
+    Session profit     | {"{:.4f}".format(self.profit)}
         ''')
-
-
-def log_trade(order):
-    with open("trades.csv", "a", newline="") as csvfile:
-        
-        d = {
-            "id": order["id"],
-            "timestamp": order["timestamp"],
-            "datetime": order["datetime"],
-            "type": order["type"],
-            "symbol": order["symbol"],
-            "side": order["side"],
-            "price": order["price"],
-            "amount": order["amount"] if order["amount"] else order["filled"],
-            "cost": order["price"] * order["amount"],
-            "order_id": order["id"],
-            "status": order["status"],
-        }      
-        
-        writer = csv.DictWriter(csvfile, fieldnames=d.keys())  
-        
-        print(
-            f'{d["datetime"]} | {d["id"]} | {d["type"].upper():<6} | {d["side"].upper():<4} | {d["amount"]:<7} | {d["price"]:<8} | {d["cost"]:<18} | {d["status"]:<6}'
-        )
-        
-        writer.writerow(d)
