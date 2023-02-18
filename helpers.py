@@ -179,17 +179,15 @@ class OrderMonitor():
 
     def get_lowest_sell_order(self):
         sell_orders = [o for o in self.open_orders.values() if o["side"] == "sell"]
-        if len(sell_orders) == 0:
-            return None
-        else:
+        if len(sell_orders) > 0:
             return min(sell_orders, key=lambda o: o["price"])
+        return None
     
     def get_highest_buy_order(self):
         buy_orders = [o for o in self.open_orders.values() if o["side"] == "buy"]
-        if len(buy_orders) == 0:
-            return None
-        else:
+        if len(buy_orders) > 0:
             return max(buy_orders, key=lambda o: o["price"])
+        return None
     
     def status(self):
         orders = self.fetcher.open_orders()
