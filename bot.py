@@ -2,6 +2,7 @@ import time
 import os
 import threading
 import requests
+import urllib3
 
 import ccxt
 
@@ -93,20 +94,19 @@ def process_order_update(order):
             order_monitor.log(order)
             return True
         return False
-    except requests.exceptions.HTTPError as e:
-        print(f"process_order_update requests.exceptions.HTTPError for {order['side']} order: {str(e)}")
-        # sleep for and additional 10 seconds
-        time.sleep(10)
-    except ccxt.errors.InvalidNonce as e:
-        print(f"process_order_update ccxt.errors.InvalidNonce for {order['side']} order: {str(e)}")
-        # sleep for and additional 10 seconds
-        time.sleep(10)
-    except KeyError as e:
-        # if order['side'] == 'buy' then it means the order was canceled
-        if order['side'] == 'sell':
-            print(f"process_order_update KeyError for {order['side']} order: {str(e)}")
-    except TimeoutError as e:
-        print(f"process_order_update TimeoutError for {order['side']} order: {str(e)}")
+    except KeyError:
+        pass
+    except Exception as e:
+        print(f'''
+        Error in process_order_update:
+        {e.__class__=}
+        {e.__module__=}
+        {e.args=}
+        {e.__context__=}
+        Error occured in {e.__traceback__.tb_frame.f_code.co_filename} at line {e.__traceback__.tb_lineno}
+        ''')
+        
+        print("Sleeping for 10 seconds...")
         time.sleep(10)
 
 ############################################
@@ -179,7 +179,13 @@ def limit_sell(order):
         if sell_order["status"] == "closed":
             limit_buy(sell_order)
             return
-
+        
+    except requests.exceptions.HTTPError as e:
+        print(f"limit_sell requests.exceptions.HTTPError: {str(e)}")
+        print(f"Sleeping for 10 secodns and trying limit_sell again")
+        # sleep for and additional 10 seconds and try again
+        time.sleep(10)
+        limit_sell(order)
     except ccxt.errors.InsufficientFunds:
         print(f'Insufficient funds for limit sell of {sell_amount} at {sell_price} for total: {sell_price * sell_amount}')
         return
