@@ -147,33 +147,33 @@ class OrderMonitor():
         
         if prev_order:
             self.order_pairs[id] = prev_order
-        
-        if order["status"] == "open":
-            self.open_orders[id] = order
-        elif order["status"] == "canceled":
             
-            try:
-                del self.open_orders[id]
-                return
-            except KeyError:
-                pass
+        match order["status"]:
+            case "open":
+                self.open_orders[id] = order
+            case "canceled":
+                
+                if id in self.open_orders:
+                    del self.open_orders[id]
+                    
+            case "closed":
             
-        elif order["status"] == "closed":
-            
-            # save closed order and remove from open orders
-            self.closed_orders[id] = order
-            try:
-                del self.open_orders[id]
-            except KeyError:
-                pass
-            
-            if id in self.order_pairs and prev_order is None:
-                prev_order = self.order_pairs[id]
-                assert order["side"] == "sell" and prev_order["side"] == "buy"
-                assert order["amount"] == prev_order["amount"]
-                profit = (order["price"] - prev_order["price"]) * order["amount"]
-                self.profit += profit
-                print(f'{self.fetcher.ts()} | Profit: {profit} | Total session profit: {self.profit}')
+                # save closed order and remove from open orders
+                self.closed_orders[id] = order
+                
+                if id in self.open_orders:
+                    del self.open_orders[id]
+                
+                if id in self.order_pairs and prev_order is None:
+                    prev_order = self.order_pairs[id]
+                    assert order["side"] == "sell" and prev_order["side"] == "buy"
+                    assert order["amount"] == prev_order["amount"]
+                    profit = (order["price"] - prev_order["price"]) * order["amount"]
+                    self.profit += profit
+                    print(f'{self.fetcher.ts()} | Profit: {profit} | Total session profit: {self.profit}')
+                    
+            case _:
+                print("error. invalid status.")
             
             
 
