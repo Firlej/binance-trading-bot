@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 from helpers import *
 
+############################################
 
 import signal
 exit_flag = False
@@ -21,16 +22,8 @@ def end():
     cancel_all_open_buy_orders()
     print("Exiting...")
 
-def exit_flag_trueSIGINT(signal, frame):
-    print("SIGINT detected. Ending...")
-    end()
-
-def exit_flag_trueSIGTERM(signal, frame):
-    print("SIGTERM detected. Ending...")
-    end()
-
-signal.signal(signal.SIGINT, exit_flag_trueSIGINT)
-signal.signal(signal.SIGTERM, exit_flag_trueSIGTERM)
+signal.signal(signal.SIGINT, end)
+signal.signal(signal.SIGTERM, end)
 
 ############################################
 
@@ -97,14 +90,8 @@ def process_order_update(order):
     except KeyError:
         pass
     except Exception as e:
-        print(f'''
-        Error in process_order_update:
-        {e.__class__=}
-        {e.__module__=}
-        {e.args=}
-        {e.__context__=}
-        Error occured in {e.__traceback__.tb_frame.f_code.co_filename} at line {e.__traceback__.tb_lineno}
-        ''')
+        # all kinds of network errors can happen here. log them so they can be examined later
+        log_error(e, __name__)
         
         print("Sleeping for 10 seconds...")
         time.sleep(10)
@@ -125,9 +112,7 @@ def cancel_order(order, timeout=0):
         order_monitor.log(canceled_order)
         
         return canceled_order
-    except ccxt.errors.OrderNotFound:
-        pass
-    except KeyError:
+    except (ccxt.errors.OrderNotFound, KeyError):
         pass
 
 ############################################
@@ -154,7 +139,6 @@ def market_buy():
 
     except ccxt.errors.InsufficientFunds:
         print("Insufficient funds for market buy")
-        return
     except ccxt.errors.InvalidOrder as e:
         print(f"Tried to market buy {amount} at ~{price} for total: ~{price * amount} but got an error: {str(e)}")
         print("Trying again in 1 second...")

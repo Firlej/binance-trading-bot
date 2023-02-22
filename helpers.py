@@ -17,6 +17,18 @@ def round_up_to_n_decimal_places(f, n):
 def map_range(x, a, b, y, z):
     return (x - a) * (z - y) / (b - a) + y
 
+# Use for catching `Exception` and printing debug into where all kinds of different errors can happen
+def log_error(e, name):
+    print(f'''
+    Error in {name}:
+    {e.__class__=}
+    {e.__module__=}
+    {e.args=}
+    {e.__context__=}
+    Error occured in {e.__traceback__.tb_frame.f_code.co_filename} at line {e.__traceback__.tb_lineno}
+    ''')
+    
+
 class Fetcher():
 
     def __init__(self, exchange, symbol):
@@ -173,7 +185,7 @@ class OrderMonitor():
                     print(f'{self.fetcher.ts()} | Profit: {profit} | Total session profit: {self.profit}')
                     
             case _:
-                print("error. invalid status.")
+                print(f"error. invalid status: {order['status']}")
             
             
 
