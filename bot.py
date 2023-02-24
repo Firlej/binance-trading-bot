@@ -38,6 +38,8 @@ SLEEP_MAX = int(os.getenv("SLEEP_MAX"))
 PROFIT_MARGIN_MIN = float(os.getenv("PROFIT_MARGIN_MIN"))
 PROFIT_MARGIN_MAX = float(os.getenv("PROFIT_MARGIN_MAX"))
 
+BUY_CANCEL_TIMEOUT = float(os.getenv("BUY_CANCEL_TIMEOUT"))
+
 print(f"SLEEP_MIN: {SLEEP_MIN} SLEEP_MAX: {SLEEP_MAX}")
 print(f"PROFIT_MARGIN_MIN: {PROFIT_MARGIN_MIN} PROFIT_MARGIN_MAX: {PROFIT_MARGIN_MAX}")
 
@@ -193,7 +195,7 @@ def limit_buy(order):
             limit_sell(buy_order)
             return
         
-        threading.Thread(target=cancel_order, args=(buy_order, SLEEP_MAX)).start()
+        threading.Thread(target=cancel_order, args=(buy_order, BUY_CANCEL_TIMEOUT)).start()
 
     except ccxt.errors.InsufficientFunds:
         print(f'Insufficient funds for limit buy of {buy_amount} at {buy_price} for total: {buy_price * buy_amount}')
