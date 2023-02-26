@@ -10,12 +10,14 @@ from dotenv import load_dotenv
 
 from helpers import *
 
+from exchange import ExtendedSymbolExchange
+
 ############################################
 
 import signal
 exit_flag = False
 
-def end():
+def end(a, b):
     global exit_flag
     exit_flag = True
     print("Cancelling all open buy orders...")
@@ -45,7 +47,7 @@ print(f"PROFIT_MARGIN_MIN: {PROFIT_MARGIN_MIN} PROFIT_MARGIN_MAX: {PROFIT_MARGIN
 
 ############################################
 
-exchange = ccxt.binance({
+exchange = ExtendedSymbolExchange(symbol=symbol, config={
     "apiKey": os.getenv("API_KEY"),
     "secret": os.getenv("API_SECRET")
 })
@@ -93,7 +95,7 @@ def process_order_update(order):
         pass
     except Exception as e:
         # all kinds of network errors can happen here. log them so they can be examined later
-        log_error(e, __name__)
+        log_error(e, "process_order_update")
         
         print("Sleeping for 10 seconds...")
         time.sleep(10)
@@ -105,6 +107,7 @@ def cancel_order(order, timeout=0):
     
     # split sleep into 1 second intervals to allow for exit_flag to be checked
     for _ in range(int(timeout)):
+        # todo check if order is still open, if not then return
         if exit_flag:
             return
         time.sleep(1)
@@ -146,6 +149,19 @@ def market_buy():
         print("Trying again in 1 second...")
         time.sleep(1)
         market_buy()
+    except ccxt.errors.ExchangeError as e:
+        
+        # todo how to catch a error specific to MAX_NUM_ORDERS? instead of this ugly if statement
+        if str(e) == 'binance {"code":-2010,"msg":"Filter failure: MAX_NUM_ORDERS"}':
+            print("MAX_NUM_ORDERS reached. Merging orders...")
+            # todo - check if there are open buy orders and cancel them 
+            new_orders = exchange.merge_sell_orders()
+            for new_order in new_orders:
+                order_monitor.log(new_order)
+            
+            market_buy()
+        else:
+            log_error(e, "market_buy")
 
 
 # place a limit sell order for the amount of BTC that was bought
