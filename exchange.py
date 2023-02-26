@@ -97,7 +97,7 @@ class ExtendedSymbolExchange(ccxt.binance):
         orders = self.open_sell_orders()
         
         if len(orders) < 10:
-            return
+            raise Exception("Not enough orders to merge")
         
         orders.sort(key=lambda order: -order["price"])
         
@@ -113,7 +113,7 @@ class ExtendedSymbolExchange(ccxt.binance):
         
         prev_value = self.sell_btc_value()
         
-        new_orders = []
+        order_updates = []
 
         # Iterate over sell orders in pairs
         for i in range(0, len(orders)-1, 2):
@@ -128,8 +128,8 @@ class ExtendedSymbolExchange(ccxt.binance):
             new_price = np.average(prices, weights=amounts) + self.min_price + self.min_price
 
             # Cancel the old orders
-            self.cancel_order(order1['id'], symbol=self.s)
-            self.cancel_order(order2['id'], symbol=self.s)
+            order_updates.append(self.cancel_order(order1['id'], symbol=self.s))
+            order_updates.append(self.cancel_order(order2['id'], symbol=self.s))
 
             # Place the new order
             new_order = self.create_order(
@@ -140,9 +140,12 @@ class ExtendedSymbolExchange(ccxt.binance):
                 price=new_price,
             )
             
-            new_orders.append(new_order)
+            order_updates.append(new_order)
         
         new_value = self.sell_btc_value()
         print(f"Sell BTC value | {prev_value=} | {new_value=}")
         
-        return new_orders
+        return order_updates
+
+    def ts(self):
+        return self.iso8601(self.milliseconds())

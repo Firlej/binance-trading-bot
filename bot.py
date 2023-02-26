@@ -52,8 +52,7 @@ exchange = ExtendedSymbolExchange(symbol=symbol, config={
     "secret": os.getenv("API_SECRET")
 })
 
-fetcher = Fetcher(exchange, symbol)
-order_monitor = OrderMonitor(exchange, symbol)
+order_monitor = OrderMonitor(exchange)
 
 ############################################
 
@@ -80,17 +79,27 @@ def watch_open_orders():
 def process_order_update(order):
     try:
         order = exchange.fetch_order(order["id"], symbol)
+        
+        if order["status"] == "open":
+            return False
+        
+        
         if order["status"] == "closed":
+            
             order_monitor.log(order)
             if order["side"] == "buy":
                 limit_sell(order)
             else:
                 limit_buy(order)
             return True
+        
         elif order["status"] == "canceled":
+            
             order_monitor.log(order)
             return True
+        
         return False
+    
     except KeyError:
         pass
     except Exception as e:
@@ -115,8 +124,7 @@ def cancel_order(order, timeout=0):
     try:
         canceled_order = exchange.cancel_order(order["id"], symbol=symbol)
         order_monitor.log(canceled_order)
-        
-        return canceled_order
+    
     except (ccxt.errors.OrderNotFound, KeyError):
         pass
 
@@ -128,8 +136,8 @@ def market_buy():
     try:
 
         # get min_order_amount based on the current price, min_cost, and min_amount
-        price = fetcher.price()
-        amount = fetcher.min_order_amount(price)
+        price = exchange.price()
+        amount = exchange.min_order_amount(price)
 
         # place a market buy order for the min amount
         order = exchange.create_order(
@@ -153,14 +161,17 @@ def market_buy():
         
         # todo how to catch a error specific to MAX_NUM_ORDERS? instead of this ugly if statement
         if str(e) == 'binance {"code":-2010,"msg":"Filter failure: MAX_NUM_ORDERS"}':
+            
             print("MAX_NUM_ORDERS reached. Merging orders...")
             # todo - check if there are open buy orders and cancel them 
-            new_orders = exchange.merge_sell_orders()
-            for new_order in new_orders:
-                order_monitor.log(new_order)
+            order_updates = exchange.merge_sell_orders()
+            for order_update in order_updates:
+                order_monitor.log(order_update)
             
             market_buy()
+            
         else:
+            
             log_error(e, "market_buy")
 
 
@@ -168,14 +179,14 @@ def market_buy():
 def limit_sell(order):
     try:
         
-        sell_price = order["price"] * fetcher.scale_by_balance(PROFIT_MARGIN_MIN, PROFIT_MARGIN_MAX)
+        sell_price = order["price"] * exchange.scale_by_balance(PROFIT_MARGIN_MIN, PROFIT_MARGIN_MAX)
         sell_amount = order["filled"]
         
         sell_order = exchange.create_order(
             symbol=symbol, type="limit", side="sell", amount=sell_amount, price=sell_price
         )
         
-        order_monitor.log(sell_order, order)
+        order_monitor.log(sell_order)
         
         # if status closed then immediately buy back
         if sell_order["status"] == "closed":
@@ -197,8 +208,8 @@ def limit_sell(order):
 def limit_buy(order):
     try:
 
-        buy_price = order["price"] / fetcher.scale_by_balance(PROFIT_MARGIN_MIN, PROFIT_MARGIN_MAX)
-        buy_amount = fetcher.min_order_amount(buy_price)
+        buy_price = order["price"] / exchange.scale_by_balance(PROFIT_MARGIN_MIN, PROFIT_MARGIN_MAX)
+        buy_amount = exchange.min_order_amount(buy_price)
         
         buy_order = exchange.create_order(
             symbol=symbol, type="limit", side="buy", amount=buy_amount, price=buy_price
@@ -223,7 +234,7 @@ def limit_buy(order):
         time.sleep(1)
 
 def cancel_all_open_buy_orders():
-    open_buy_orders = fetcher.open_buy_orders()
+    open_buy_orders = exchange.open_buy_orders()
     
     for order in open_buy_orders:
         cancel_order(order)
@@ -236,8 +247,8 @@ def main():
 
     while True:
 
-        seconds_since_last_trade = fetcher.seconds_since_last_trade()
-        sleep_timer = fetcher.scale_by_balance(SLEEP_MAX, SLEEP_MIN)
+        seconds_since_last_trade = exchange.seconds_since_last_trade()
+        sleep_timer = exchange.scale_by_balance(SLEEP_MAX, SLEEP_MIN)
         if seconds_since_last_trade > sleep_timer:
 
             market_buy()

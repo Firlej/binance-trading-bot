@@ -27,85 +27,7 @@ def log_error(e, name):
     {e.__context__=}
     Error occured in {e.__traceback__.tb_frame.f_code.co_filename} at line {e.__traceback__.tb_lineno}
     ''')
-    
-
-class Fetcher():
-
-    def __init__(self, exchange, symbol):
-        assert isinstance(exchange, ccxt.binance)
-
-        self.exchange = exchange
-        self.symbol = symbol
-
-        self.market = self.exchange.load_markets()[self.symbol]
-    
-    def price(self):
-        return self.exchange.fetch_ticker(self.symbol)['last']
-
-    def min_cost(self):
-        return self.market['limits']['cost']['min']
-    
-    def min_amount(self):
-        return self.market['limits']['amount']['min']
-    
-    def min_price(self):
-        return self.market['limits']['price']['min']
-
-    def min_order_amount(self, price=None):
-        if price is None:
-            price = self.price()
-        return math.ceil(self.min_cost() / price / self.min_amount()) * self.min_amount()
-    
-    def open_orders(self):
-        return self.exchange.fetch_open_orders(self.symbol)
-
-    def open_buy_orders(self):
-        return [order for order in self.open_orders() if order["side"] == "buy"]
-    
-    def open_sell_orders(self):
-        return [order for order in self.open_orders() if order["side"] == "sell"]
-    
-    def sell_btc_value(self):
-        orders = self.open_sell_orders()
-        if len(orders) == 0:
-            return 0
-        return sum([order["price"] * order["amount"] for order in orders])
-
-    # get the balances
-    def balances(self):
-        return self.exchange.fetch_balance()
-
-    # get the free and total BUSD balance
-    def busd_balance(self):
-        balances = self.balances()
-        return balances["free"]["BUSD"], balances["total"]["BUSD"]
-
-    # scale a value based on the balance of BUSD
-    def scale_by_balance(self, x, y):
-        free_busd, total_busd = self.busd_balance()
-        sell_btc_value = self.sell_btc_value()
-        
-        # todo sometimes this throws an error TypeError: can only concatenate str (not "float") to str
-        scaled_value = map_range(free_busd, 0, total_busd + sell_btc_value, x, y)
-        assert min(x, y) <= scaled_value <= max(x, y)
-        return scaled_value
-    
-    # get the number of seconds since the last trade
-    def seconds_since_last_trade(self):
-        trades = self.exchange.fetch_my_trades(self.symbol, limit=1)
-        if len(trades) == 0:
-            print("No trades found in seconds_since_last_trade. Returning float(\"inf\")")
-            return float("inf")
-        else:
-            return time.time() - trades[0]["timestamp"] // 1000
-        
-    def order(self, order):
-        return self.exchange.fetch_order(order["id"], self.symbol)
-    
-    def ts(self):
-        return self.exchange.iso8601(self.exchange.milliseconds())
-
-
+ 
 def log_order(order):
     d = {
         "id": order["id"],
@@ -130,16 +52,13 @@ def log_order(order):
 class OrderMonitor():
     
     # initialize the class
-    def __init__(self, exchange, symbol):
+    def __init__(self, exchange):
         assert isinstance(exchange, ccxt.binance)
         
         self.exchange = exchange
-        self.symbol = symbol
-        
-        self.fetcher = Fetcher(self.exchange, self.symbol)
         
         self.open_orders = {}
-        self.closed_orders = {}
+        # self.closed_orders = {}
         self.init_orders()
         
         # key: sell order id, value: buy order id
@@ -149,9 +68,9 @@ class OrderMonitor():
         print("Initialized OrderMonitor")
         
     def init_orders(self):
-        for open_order in self.fetcher.open_orders():
+        for open_order in self.exchange.open_orders():
             self.open_orders[open_order["id"]] = open_order
-        print(f'{self.fetcher.ts()} | Initialized {len(self.open_orders)} open orders')
+        print(f'{self.exchange.ts()} | Initialized {len(self.open_orders)} open orders')
     
     def log(self, order, prev_order=None):
         id = order["id"]
@@ -171,7 +90,7 @@ class OrderMonitor():
             case "closed":
             
                 # save closed order and remove from open orders
-                self.closed_orders[id] = order
+                # self.closed_orders[id] = order
                 
                 if id in self.open_orders:
                     del self.open_orders[id]
@@ -182,7 +101,7 @@ class OrderMonitor():
                     assert order["amount"] == prev_order["amount"]
                     profit = (order["price"] - prev_order["price"]) * order["amount"]
                     self.profit += profit
-                    print(f'{self.fetcher.ts()} | Profit: {profit} | Total session profit: {self.profit}')
+                    print(f'{self.exchange.ts()} | Profit: {profit} | Total session profit: {self.profit}')
                     
             case _:
                 print(f"error. invalid status: {order['status']}")
@@ -202,15 +121,15 @@ class OrderMonitor():
         return None
     
     def status(self):
-        orders = self.fetcher.open_orders()
+        orders = self.exchange.open_orders()
         buy_orders = [o for o in orders if o["side"] == "buy"]
         sell_orders = [o for o in orders if o["side"] == "sell"]
         
         sell_btc_amount = 0 if len(sell_orders) == 0 else sum([o["amount"] for o in sell_orders])
         sell_btc_value = 0 if len(sell_orders) == 0 else sum([o["price"] * o["amount"] for o in sell_orders])
-        curr_sell_value = 0 if len(sell_orders) == 0 else sell_btc_amount * self.fetcher.price()
+        curr_sell_value = 0 if len(sell_orders) == 0 else sell_btc_amount * self.exchange.price()
         
-        free_busd, total_busd = self.fetcher.busd_balance()
+        free_busd, total_busd = self.exchange.busd_balance()
         free_balance_percent = map_range(free_busd, 0, total_busd + sell_btc_value, 0, 100)
         
         prices = [o['price'] for o in sell_orders]
@@ -218,7 +137,7 @@ class OrderMonitor():
         p_min = min(prices) if len(prices) > 0 else 0
         
         print(f'''
-    {self.fetcher.ts()}
+    {self.exchange.ts()}
     Available balances | {"{:.2f}".format(free_busd)} / {"{:.2f}".format(total_busd + sell_btc_value)} BUSD ({"{:.2f}".format(free_balance_percent)}%) | {"{:.5f}".format(sell_btc_amount)} BTC
     BTC value          | Expected: {"{:.2f}".format(sell_btc_value)} | Current: {"{:.2f}".format(curr_sell_value)} | Curr loss: {"{:.2f}".format(curr_sell_value - sell_btc_value)}
     Open orders        | {len(buy_orders)} buy | {len(sell_orders)} sell | {len(orders)} total
