@@ -64,7 +64,6 @@ class OrderMonitor():
         # key: sell order id, value: buy order id
         self.order_pairs = {}
         
-        self.profit = 0.0
         print("Initialized OrderMonitor")
         
     def init_orders(self):
@@ -72,36 +71,27 @@ class OrderMonitor():
             self.open_orders[open_order["id"]] = open_order
         print(f'{self.exchange.ts()} | Initialized {len(self.open_orders)} open orders')
     
-    def log(self, order, prev_order=None):
+    def log(self, order):
+        
         id = order["id"]
         log_order(order)
-        
-        if prev_order:
-            self.order_pairs[id] = prev_order
             
         match order["status"]:
+            
             case "open":
+                
                 self.open_orders[id] = order
+                
             case "canceled":
                 
                 if id in self.open_orders:
                     del self.open_orders[id]
                     
             case "closed":
-            
-                # save closed order and remove from open orders
-                # self.closed_orders[id] = order
                 
                 if id in self.open_orders:
                     del self.open_orders[id]
-                
-                if id in self.order_pairs and prev_order is None:
-                    prev_order = self.order_pairs[id]
-                    assert order["side"] == "sell" and prev_order["side"] == "buy"
-                    assert order["amount"] == prev_order["amount"]
-                    profit = (order["price"] - prev_order["price"]) * order["amount"]
-                    self.profit += profit
-                    print(f'{self.exchange.ts()} | Profit: {profit} | Total session profit: {self.profit}')
+                    self.closed_orders[id] = order
                     
             case _:
                 print(f"error. invalid status: {order['status']}")
@@ -142,5 +132,4 @@ class OrderMonitor():
     BTC value          | Expected: {"{:.2f}".format(sell_btc_value)} | Current: {"{:.2f}".format(curr_sell_value)} | Curr loss: {"{:.2f}".format(curr_sell_value - sell_btc_value)}
     Open orders        | {len(buy_orders)} buy | {len(sell_orders)} sell | {len(orders)} total
     Sell prices        | Min: {p_min} | Max: {p_max} | Diff: {round(p_max - p_min, 2)} ({round((p_max - p_min) / p_min * 100, 2)}%)
-    Session profit     | {"{:.4f}".format(self.profit)}
         ''')
