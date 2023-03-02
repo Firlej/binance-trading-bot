@@ -1,4 +1,6 @@
 import math
+import requests
+import time
 
 import numpy as np
 import ccxt
@@ -29,8 +31,26 @@ class ExtendedSymbolExchange(ccxt.binance):
         print(f"min_amount: {self.min_amount} {self.base}")
         print(f"min_price: {self.min_price} {self.quote}")
         print(f"min_order_amount: {self.min_order_amount()} {self.base} at {self.price()} {self.quote}")
+    
+    # wrapper for create_order() that retries on network errors
+    def create_order(self, type, side, amount, price=None, params={}):
         
-        print
+        try:
+            
+            return super().create_order(
+                symbol=self.s, type=type, side=side, amount=amount, price=price, params=params
+            )
+            
+        except (ccxt.errors.NetworkError, ccxt.errors.InvalidOrder, requests.exceptions.HTTPError) as e:
+            
+            print(f"Error: Tried to {type} {side} {amount} {self.base} at {price} {self.quote} but got error.")
+            log_error(e, "ExtendedSymbolExchange.create_order()")
+            print("Retrying in 10 seconds...")
+            time.sleep(10)
+            
+            return self.create_order(
+                type=type, side=side, amount=amount, price=price, params=params
+            )
     
     def price(self):
         return self.fetch_ticker(self.s)['last']
@@ -59,12 +79,16 @@ class ExtendedSymbolExchange(ccxt.binance):
     def balances(self):
         return self.fetch_balance()
     
-    def busd_balance(self):
+    def base_balance(self):
         balances = self.balances()
-        return balances["free"]["BUSD"], balances["total"]["BUSD"]
+        return balances["free"][self.base], balances["total"][self.base]
+    
+    def quote_balance(self):
+        balances = self.balances()
+        return balances["free"][self.quote], balances["total"][self.quote]
     
     def scale_by_balance(self, x, y):
-        free_busd, total_busd = self.busd_balance()
+        free_busd, total_busd = self.quote_balance()
         sell_btc_value = self.sell_btc_value()
         
         # todo sometimes this throws an error `TypeError: can only concatenate str (not "float") to str``
@@ -133,7 +157,6 @@ class ExtendedSymbolExchange(ccxt.binance):
 
             # Place the new order
             new_order = self.create_order(
-                symbol=self.s,
                 type='limit',
                 side='sell',
                 amount=new_amount,

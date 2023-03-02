@@ -19,10 +19,11 @@ def map_range(x, a, b, y, z):
 
 # Use for catching `Exception` and printing debug into where all kinds of different errors can happen
 def log_error(e, name):
+    module = e.__module__ if hasattr(e, "__module__") else ""
     print(f'''
     Error in {name}:
     {e.__class__=}
-    {e.__module__=}
+    {module=}
     {e.args=}
     {e.__context__=}
     Error occured in {e.__traceback__.tb_frame.f_code.co_filename} at line {e.__traceback__.tb_lineno}
@@ -58,7 +59,7 @@ class OrderMonitor():
         self.exchange = exchange
         
         self.open_orders = {}
-        # self.closed_orders = {}
+        self.closed_orders = {}
         self.init_orders()
         
         # key: sell order id, value: buy order id
@@ -111,25 +112,36 @@ class OrderMonitor():
         return None
     
     def status(self):
-        orders = self.exchange.open_orders()
-        buy_orders = [o for o in orders if o["side"] == "buy"]
-        sell_orders = [o for o in orders if o["side"] == "sell"]
         
-        sell_btc_amount = 0 if len(sell_orders) == 0 else sum([o["amount"] for o in sell_orders])
-        sell_btc_value = 0 if len(sell_orders) == 0 else sum([o["price"] * o["amount"] for o in sell_orders])
-        curr_sell_value = 0 if len(sell_orders) == 0 else sell_btc_amount * self.exchange.price()
+        try:
         
-        free_busd, total_busd = self.exchange.busd_balance()
-        free_balance_percent = map_range(free_busd, 0, total_busd + sell_btc_value, 0, 100)
-        
-        prices = [o['price'] for o in sell_orders]
-        p_max = max(prices) if len(prices) > 0 else 0
-        p_min = min(prices) if len(prices) > 0 else 0
-        
-        print(f'''
+            orders = self.exchange.open_orders()
+            buy_orders = [o for o in orders if o["side"] == "buy"]
+            sell_orders = [o for o in orders if o["side"] == "sell"]
+            
+            sell_btc_amount = 0 if len(sell_orders) == 0 else sum([o["amount"] for o in sell_orders])
+            sell_btc_value = 0 if len(sell_orders) == 0 else sum([o["price"] * o["amount"] for o in sell_orders])
+            curr_sell_value = 0 if len(sell_orders) == 0 else sell_btc_amount * self.exchange.price()
+            
+            free_busd, total_busd = self.exchange.quote_balance()
+            free_balance_percent = map_range(free_busd, 0, total_busd + sell_btc_value, 0, 100)
+            
+            prices = [o['price'] for o in sell_orders]
+            p_max = max(prices) if len(prices) > 0 else 0
+            p_min = min(prices) if len(prices) > 0 else 0
+            
+            print(f'''
     {self.exchange.ts()}
     Available balances | {"{:.2f}".format(free_busd)} / {"{:.2f}".format(total_busd + sell_btc_value)} BUSD ({"{:.2f}".format(free_balance_percent)}%) | {"{:.5f}".format(sell_btc_amount)} BTC
     BTC value          | Expected: {"{:.2f}".format(sell_btc_value)} | Current: {"{:.2f}".format(curr_sell_value)} | Curr loss: {"{:.2f}".format(curr_sell_value - sell_btc_value)}
     Open orders        | {len(buy_orders)} buy | {len(sell_orders)} sell | {len(orders)} total
     Sell prices        | Min: {p_min} | Max: {p_max} | Diff: {round(p_max - p_min, 2)} ({round((p_max - p_min) / p_min * 100, 2)}%)
-        ''')
+            ''')
+            
+        except Exception as e:
+            log_error(e, "OrderMonitor.status()")
+            
+            print("Error in OrderMonitor.status(). Sleeping for 10 seconds and retrying...")
+            time.sleep(10)
+            
+            self.status()

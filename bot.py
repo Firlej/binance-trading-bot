@@ -32,7 +32,7 @@ signal.signal(signal.SIGTERM, end)
 # load the .env file
 load_dotenv()
 
-symbol = "BTC/BUSD"
+symbol = os.getenv("SYMBOL")
 
 SLEEP_MIN = int(os.getenv("SLEEP_MIN"))
 SLEEP_MAX = int(os.getenv("SLEEP_MAX"))
@@ -82,7 +82,6 @@ def process_order_update(order):
         
         if order["status"] == "open":
             return False
-        
         
         if order["status"] == "closed":
             
@@ -141,7 +140,7 @@ def market_buy():
 
         # place a market buy order for the min amount
         order = exchange.create_order(
-            symbol=symbol, type="market", side="buy", amount=amount
+            type="market", side="buy", amount=amount
         )
 
         # log the market buy order
@@ -151,12 +150,9 @@ def market_buy():
         limit_sell(order)
 
     except ccxt.errors.InsufficientFunds:
+        
         print("Insufficient funds for market buy")
-    except ccxt.errors.InvalidOrder as e:
-        print(f"Tried to market buy {amount} at ~{price} for total: ~{price * amount} but got an error: {str(e)}")
-        print("Trying again in 1 second...")
-        time.sleep(1)
-        market_buy()
+        
     except ccxt.errors.ExchangeError as e:
         
         # todo how to catch a error specific to MAX_NUM_ORDERS? instead of this ugly if statement
@@ -183,7 +179,7 @@ def limit_sell(order):
         sell_amount = order["filled"]
         
         sell_order = exchange.create_order(
-            symbol=symbol, type="limit", side="sell", amount=sell_amount, price=sell_price
+            type="limit", side="sell", amount=sell_amount, price=sell_price
         )
         
         order_monitor.log(sell_order)
@@ -193,12 +189,6 @@ def limit_sell(order):
             limit_buy(sell_order)
             return
         
-    except requests.exceptions.HTTPError as e:
-        print(f"limit_sell requests.exceptions.HTTPError: {str(e)}")
-        print(f"Sleeping for 10 secodns and trying limit_sell again")
-        # sleep for and additional 10 seconds and try again
-        time.sleep(10)
-        limit_sell(order)
     except ccxt.errors.InsufficientFunds:
         print(f'Insufficient funds for limit sell of {sell_amount} at {sell_price} for total: {sell_price * sell_amount}')
         return
@@ -212,7 +202,7 @@ def limit_buy(order):
         buy_amount = exchange.min_order_amount(buy_price)
         
         buy_order = exchange.create_order(
-            symbol=symbol, type="limit", side="buy", amount=buy_amount, price=buy_price
+            type="limit", side="buy", amount=buy_amount, price=buy_price
         )
 
         order_monitor.log(buy_order)
@@ -227,11 +217,6 @@ def limit_buy(order):
     except ccxt.errors.InsufficientFunds:
         print(f'Insufficient funds for limit buy of {buy_amount} at {buy_price} for total: {buy_price * buy_amount}')
         return
-    except ccxt.errors.InvalidOrder as e:
-        print(f"Tried to limit buy {buy_amount} at ~{buy_price} for total: ~{buy_price * buy_amount} but got an error: {str(e)}")
-        # todo not trying actually lols
-        print("Trying again in 1 second...")
-        time.sleep(1)
 
 def cancel_all_open_buy_orders():
     open_buy_orders = exchange.open_buy_orders()
