@@ -140,7 +140,7 @@ def market_buy():
 
         # place a market buy order for the min amount
         order = exchange.create_order(
-            type="market", side="buy", amount=amount
+            symbol=symbol, type="market", side="buy", amount=amount
         )
 
         # log the market buy order
@@ -179,7 +179,7 @@ def limit_sell(order):
         sell_amount = order["filled"]
         
         sell_order = exchange.create_order(
-            type="limit", side="sell", amount=sell_amount, price=sell_price
+            symbol=symbol, type="limit", side="sell", amount=sell_amount, price=sell_price
         )
         
         order_monitor.log(sell_order)
@@ -202,7 +202,7 @@ def limit_buy(order):
         buy_amount = exchange.min_order_amount(buy_price)
         
         buy_order = exchange.create_order(
-            type="limit", side="buy", amount=buy_amount, price=buy_price
+            symbol=symbol, type="limit", side="buy", amount=buy_amount, price=buy_price
         )
 
         order_monitor.log(buy_order)

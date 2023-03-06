@@ -20,9 +20,9 @@ class ExtendedSymbolExchange(ccxt.binance):
         self.s = symbol
         self.m = self.load_markets()[self.s]
         
-        self.min_cost = self.m['limits']['cost']['min']
         self.min_amount = self.m['limits']['amount']['min']
         self.min_price = self.m['limits']['price']['min']
+        self.min_cost = self.m['limits']['cost']['min']
         
         self.base = self.m['base']
         self.quote = self.m['quote']
@@ -33,12 +33,12 @@ class ExtendedSymbolExchange(ccxt.binance):
         print(f"min_order_amount: {self.min_order_amount()} {self.base} at {self.price()} {self.quote}")
     
     # wrapper for create_order() that retries on network errors
-    def create_order(self, type, side, amount, price=None, params={}):
+    def create_order(self, symbol, type, side, amount, price=None, params={}):
         
         try:
             
             return super().create_order(
-                symbol=self.s, type=type, side=side, amount=amount, price=price, params=params
+                symbol=symbol, type=type, side=side, amount=amount, price=price, params=params
             )
             
         except (ccxt.errors.NetworkError, ccxt.errors.InvalidOrder, requests.exceptions.HTTPError) as e:
@@ -49,7 +49,7 @@ class ExtendedSymbolExchange(ccxt.binance):
             time.sleep(10)
             
             return self.create_order(
-                type=type, side=side, amount=amount, price=price, params=params
+                symbol=symbol, type=type, side=side, amount=amount, price=price, params=params
             )
     
     def price(self):
@@ -88,13 +88,25 @@ class ExtendedSymbolExchange(ccxt.binance):
         return balances["free"][self.quote], balances["total"][self.quote]
     
     def scale_by_balance(self, x, y):
-        free_busd, total_busd = self.quote_balance()
-        sell_btc_value = self.sell_btc_value()
         
-        # todo sometimes this throws an error `TypeError: can only concatenate str (not "float") to str``
-        scaled_value = map_range(free_busd, 0, total_busd + sell_btc_value, x, y)
-        assert min(x, y) <= scaled_value <= max(x, y)
-        return scaled_value    
+        try:
+        
+            free_busd, total_busd = self.quote_balance()
+            sell_btc_value = self.sell_btc_value()
+            
+            # todo sometimes this throws an error `TypeError: can only concatenate str (not "float") to str``
+            scaled_value = map_range(free_busd, 0, total_busd + sell_btc_value, x, y)
+            
+            assert min(x, y) <= scaled_value <= max(x, y)
+            return scaled_value    
+            
+        
+        except Exception as e:
+            
+            log_error(e, "scale_by_balance()")
+            
+            # still raise the error
+            raise e
     
     def seconds_since_last_trade(self):
         trades = self.fetch_my_trades(self.s, limit=1)
@@ -157,6 +169,7 @@ class ExtendedSymbolExchange(ccxt.binance):
 
             # Place the new order
             new_order = self.create_order(
+                symbol=self.s,
                 type='limit',
                 side='sell',
                 amount=new_amount,
