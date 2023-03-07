@@ -16,7 +16,7 @@ class ExtendedSymbolExchange(ccxt.binance):
         # print ts
         print(f"{self.iso8601(self.milliseconds())}")
         
-        print(f"Initializing {self.__class__.__name__} with symbol {symbol}")
+        print(f"Initializing {self.__class__.__name__}...")
         self.s = symbol
         self.m = self.load_markets()[self.s]
         
