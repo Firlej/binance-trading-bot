@@ -20,9 +20,13 @@ class ExtendedSymbolExchange(ccxt.binance):
         self.s = symbol
         self.m = self.load_markets()[self.s]
         
+        self.precision = self.m['precision']
+        
         self.min_amount = self.m['limits']['amount']['min']
         self.min_price = self.m['limits']['price']['min']
         self.min_cost = self.m['limits']['cost']['min']
+        
+        self.max_num_orders = self.get_max_num_orders()
         
         self.base = self.m['base']
         self.quote = self.m['quote']
@@ -31,6 +35,19 @@ class ExtendedSymbolExchange(ccxt.binance):
         print(f"min_amount: {self.min_amount} {self.base}")
         print(f"min_price: {self.min_price} {self.quote}")
         print(f"min_order_amount: {self.min_order_amount()} {self.base} at {self.price()} {self.quote}")
+    
+    def round(self, x, precision):
+        # {'amount': 5, 'base': 8, 'price': 2, 'quote': 8}
+        assert precision in self.precision.keys(), f"precision must be one of {self.precision.keys()}"
+        
+        return round(x, self.precision[precision])
+    
+    def get_max_num_orders(self):
+        max_num_orders = next(
+            (f['maxNumOrders'] for f in self.m["info"]["filters"] if f['filterType'] == 'MAX_NUM_ORDERS'),
+            None
+        )
+        return int(max_num_orders)
     
     # wrapper for create_order() that retries on network errors
     def create_order(self, symbol, type, side, amount, price=None, params={}):
@@ -92,6 +109,7 @@ class ExtendedSymbolExchange(ccxt.binance):
         try:
         
             free_busd, total_busd = self.quote_balance()
+            
             sell_btc_value = self.sell_btc_value()
             
             # todo sometimes this throws an error `TypeError: can only concatenate str (not "float") to str``
@@ -185,3 +203,29 @@ class ExtendedSymbolExchange(ccxt.binance):
 
     def ts(self):
         return self.iso8601(self.milliseconds())
+    
+    def cancel_all_buy_orders(self):
+        for order in self.open_buy_orders():
+            self.cancel_order(order["id"], symbol=self.s)
+    
+    def sell_remaining_base_for_max_price(self):
+
+        free, total = self.base_balance()
+
+        sell_orders = self.open_sell_orders()
+        
+        assert len(sell_orders) > 0, "No sell orders found"
+
+        max_sell_price = max([o["price"] for o in sell_orders]) - self.min_price
+        
+        assert free >= self.min_order_amount(max_sell_price), f"free {free} < min_order_amount {self.min_order_amount(max_sell_price)}"
+        
+        if (free > self.min_order_amount()):
+            
+            self.create_order(
+                symbol=self.s, type="limit", side="sell", amount=free, price=max_sell_price
+            )
+
+        
+
+    
