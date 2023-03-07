@@ -9,3 +9,4 @@ Dockerfile
 .env*
 *.csv
 *.json
+.pylintrc
