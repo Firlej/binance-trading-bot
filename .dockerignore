@@ -10,3 +10,5 @@ Dockerfile
 *.csv
 *.json
 .pylintrc
+.dockerignore
+logs*
