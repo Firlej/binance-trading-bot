@@ -125,19 +125,19 @@ class OrderMonitor():
             buy_orders = [o for o in orders if o["side"] == "buy"]
             sell_orders = [o for o in orders if o["side"] == "sell"]
 
-            sell_btc_amount = 0
+            sell_base_amount = 0
             sell_base_value = 0
             curr_sell_value = 0
 
             if len(sell_orders) > 0:
                 amounts = [o["amount"] for o in sell_orders]
                 values = [o["price"] * o["amount"] for o in sell_orders]
-                sell_btc_amount = sum(amounts)
+                sell_base_amount = sum(amounts)
                 sell_base_value = sum(values)
-                curr_sell_value = sell_btc_amount * self.exchange.price()
+                curr_sell_value = sell_base_amount * self.exchange.price()
 
-            free_busd, total_busd = self.exchange.quote_balance()
-            free_balance_percent = map_range(free_busd, 0, total_busd + sell_base_value, 0, 100)
+            free_quote, total_quote = self.exchange.quote_balance()
+            free_balance_percent = map_range(free_quote, 0, total_quote + sell_base_value, 0, 100)
 
             prices = [o['price'] for o in sell_orders]
             p_max = max(prices) if len(prices) > 0 else 0
@@ -145,8 +145,8 @@ class OrderMonitor():
 
             print(f"""
     {self.exchange.current_timestamp()}
-    Available balances | {free_busd:.2f} / {total_busd + sell_base_value:.2f} BUSD ({free_balance_percent:.2f}%) | {sell_btc_amount:.5f} BTC
-    BTC value          | Expected: {sell_base_value:.2f} | Current: {curr_sell_value:.2f} | Curr loss: {curr_sell_value - sell_base_value:.2f}
+    Available balances | {free_quote:.2f} / {total_quote + sell_base_value:.2f} {self.exchange.quote} ({free_balance_percent:.2f}%) | {sell_base_amount:.5f} {self.exchange.base}
+    {self.exchange.base} value          | Expected: {sell_base_value:.2f} | Current: {curr_sell_value:.2f} | Curr loss: {curr_sell_value - sell_base_value:.2f}
     Open orders        | {len(buy_orders)} buy | {len(sell_orders)} sell | {len(orders)} total
     Sell prices        | Min: {p_min} | Max: {p_max} | Diff: {round(p_max - p_min, 2)} ({round((p_max - p_min) / p_min * 100, 2)}%)
             """)

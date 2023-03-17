@@ -153,13 +153,13 @@ class ExtendedSymbolExchange(ccxt.binance):
 
         try:
 
-            free_busd, total_busd = self.quote_balance()
+            free_quote, total_quote = self.quote_balance()
 
             sell_base_value = self.sell_base_value()
 
             # todo sometimes this throws an error `TypeError: can only
             # concatenate str (not "float") to str``
-            scaled_value = map_range(free_busd, 0, total_busd + sell_base_value, x, y)
+            scaled_value = map_range(free_quote, 0, total_quote + sell_base_value, x, y)
 
             assert min(x, y) <= scaled_value <= max(x, y)
             return scaled_value
@@ -255,7 +255,7 @@ class ExtendedSymbolExchange(ccxt.binance):
             order_updates.append(new_order)
 
         new_value = self.sell_base_value()
-        print(f"Sell BTC value | {prev_value=} | {new_value=}")
+        print(f"Sell {self.base} value | {prev_value=} | {new_value=}")
 
         return order_updates
 
