@@ -81,7 +81,7 @@ def watch_open_orders():
             if process_order_update(highest_buy_order):
                 continue
 
-        time.sleep(1)
+        time.sleep(2)
 
 
 def process_order_update(order):

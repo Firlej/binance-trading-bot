@@ -74,7 +74,7 @@ class ExtendedSymbolExchange(ccxt.binance):
                 price=price,
                 params=params)
 
-        except (ccxt.errors.NetworkError, ccxt.errors.InvalidOrder, requests.exceptions.HTTPError) as e:
+        except (ccxt.errors.NetworkError, ccxt.errors.InvalidOrder, ccxt.errors.DDoSProtection, requests.exceptions.HTTPError) as e:
 
             print(f"Error: Tried to {type} {side} {amount} {self.base} at {price} {self.quote} but got error.")
             log_error(e, "ExtendedSymbolExchange.create_order()")
@@ -164,6 +164,14 @@ class ExtendedSymbolExchange(ccxt.binance):
             assert min(x, y) <= scaled_value <= max(x, y)
             return scaled_value
 
+        except ccxt.errors.DDoSProtection as e:
+            
+            log_error(e, "scale_by_balance()")
+            print("Retrying in 10 seconds...")
+            time.sleep(30)
+            
+            return self.scale_by_balance(x, y)
+
         except Exception as e:
 
             log_error(e, "scale_by_balance()")
@@ -175,12 +183,23 @@ class ExtendedSymbolExchange(ccxt.binance):
         """
         Get seconds since last trade.
         """
-        trades = self.fetch_my_trades(self.s, limit=1)
-        if len(trades) == 0:
-            print("No trades found in seconds_since_last_trade. Returning float(\"inf\")")
-            return float("inf")
 
-        return time.time() - trades[0]["timestamp"] // 1000
+        try:
+
+            trades = self.fetch_my_trades(self.s, limit=1)
+            if len(trades) == 0:
+                print("No trades found in seconds_since_last_trade. Returning float(\"inf\")")
+                return float("inf")
+
+            return time.time() - trades[0]["timestamp"] // 1000
+
+        except ccxt.errors.DDoSProtection as e:
+            
+            log_error(e, "seconds_since_last_trade()")
+            print("Retrying in 10 seconds...")
+            time.sleep(10)
+            
+            return self.seconds_since_last_trade()
 
     def get_lowest_sell_order(self):
         """
@@ -217,7 +236,7 @@ class ExtendedSymbolExchange(ccxt.binance):
         orders = orders[1:]
 
         # use only top half of orders
-        orders = orders[:len(orders) // 2]
+        # orders = orders[:len(orders) // 2]
 
         # keep only even number of orders
         if len(orders) % 2 != 0:

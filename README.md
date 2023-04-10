@@ -27,22 +27,22 @@ sudo docker build -t binance-trading-bot .
 
 Kill containers and rebuild images
 ```bash
-sudo docker container kill $(sudo docker ps -aqf "name=btcbusd*") && sudo docker build -t binance-trading-bot .
+sudo docker container kill $(sudo docker ps -aqf "name=bot*") && sudo docker build -t binance-trading-bot .
 ```
 
 Stop containers
 ```bash
-sudo docker container stop $(sudo docker ps -aqf "name=btcbusd*")
+sudo docker container stop $(sudo docker ps -aqf "name=bot*")
 ```
 
 Kill containers
 ```bash
-sudo docker container kill $(sudo docker ps -aqf "name=btcbusd*")
+sudo docker container kill $(sudo docker ps -aqf "name=bot*")
 ```
 
 Print logs
 ```bash
-sudo docker logs $(sudo docker ps -aqf "name=btcbusd-oskar")
+sudo docker logs $(sudo docker ps -aqf "name=bot-oskar")
 ```
 
 
@@ -55,8 +55,15 @@ sudo docker rmi $(sudo docker images -q)
 
 Run containers
 ```bash
-sudo docker container stop $(sudo docker ps -aqf "name=btcbusd*")
-sudo docker rm -f $(sudo docker ps -aqf "name=btcbusd*")
+sudo docker container stop $(sudo docker ps -aqf "name=bot*")
+sudo docker rm -f $(sudo docker ps -aqf "name=bot*")
 sudo docker build -t binance-trading-bot .
-sudo docker run --env-file .env --detach --name btcbusd-oskar binance-trading-bot
+sudo docker run --env-file .env --detach --name bot-oskar binance-trading-bot
+sudo docker run --env-file .env.marcel --detach --name bot-marcel binance-trading-bot
 ```
+
+bash into container
+```bash
+docker exec -it $(sudo docker ps -aqf "name=bot-oskar") bash
+```
+
