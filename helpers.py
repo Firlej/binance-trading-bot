@@ -43,7 +43,7 @@ def log_order(o, o_prev = None):
         profit = value - value_prev
 
     print(
-        f'{o["datetime"]} | {o["id"]} | {o["type"].upper():<6} | {o["side"].upper():<4} | {amount:<7} | {o["price"]:<8} | {value:<6} | {o["status"]:<6} | Profit: {profit:<6}'
+        f'{o["datetime"]} | {o["id"]} | {o["type"].upper():<6} | {o["side"].upper():<4} | {amount:<7} | {o["price"]:<8} | {value:<18} | {o["status"]:<6} | Profit: {profit:<18}'
     )
 
 

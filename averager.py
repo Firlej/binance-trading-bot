@@ -11,7 +11,7 @@ pprint.PrettyPrinter(indent=4)
 pp = pprint.pprint
 
 # load the .env file
-load_dotenv()
+load_dotenv(".env.o")
 
 symbol = os.getenv("SYMBOL")
 
@@ -55,8 +55,12 @@ def how_many_orders_can_fit_in_spread_given_amount(amount, min_price, max_price)
 def print_orders(orders):
 
     len_orders = len(orders)
+    
     sum_amount = sum([order["amount"] for order in orders])
+    sum_amount = exchange.round(sum_amount, "amount")
+    
     sum_total = sum([order["price"] * order["amount"] for order in orders])
+    sum_total = exchange.round(sum_total, "quote")
 
     prices = [order['price'] for order in orders]
 
@@ -84,12 +88,14 @@ def get_new_orders(n, sum_amount, min_price, max_price, set_amount=None):
         amount = exchange.min_order_amount(price) if set_amount is None else set_amount
 
         new_orders.append({
-            "price": price + exchange.min_price,
-            "amount": amount
+            "price": exchange.round(price + exchange.min_price, "price"),
+            "amount": exchange.round(amount, "amount")
         })
 
         price -= spread_per_order
+        price = exchange.round(price, "price")
         sum_amount -= amount
+        sum_amount = exchange.round(sum_amount, "amount")
 
     # add the remaining amount to the first order
     new_orders[0]["amount"] += sum_amount
@@ -99,8 +105,12 @@ def get_new_orders(n, sum_amount, min_price, max_price, set_amount=None):
 
 def replace_orders(orders, orders_new):
     sum_amount = exchange.round(sum([order["amount"] for order in orders]), "amount")
+    # sum_amount = exchange.round(sum_amount, "amount")
+    
     sum_amount_new = exchange.round(sum([order["amount"] for order in orders_new]), "amount")
+    # sum_amount_new = exchange.round(sum_amount_new, "amount")
 
+    print(f"Are sum_amount and sum_amount_new equal? {sum_amount} {sum_amount_new}")
     assert sum_amount == sum_amount_new, f"Sum amount must be equal | {sum_amount} != {sum_amount_new}"
 
     sum_value = sum([order["price"] * order["amount"] for order in orders])
@@ -133,9 +143,8 @@ if n > max_num_orders:
 
     print(f"Number of orders {n} is greater than max number of orders {max_num_orders} \n")
 
-    n = int(max_num_orders * 0.9)
-    set_amount = sum_amount / n
-    set_amount = exchange.round(set_amount, "amount")
+    n = int(max_num_orders * 0.8)
+    set_amount = exchange.round(sum_amount / n, "amount")
 
     print("POTENTIAL NEW SELL ORDERS")
     new_orders = get_new_orders(n, sum_amount, min_price, max_price, set_amount=set_amount)
@@ -152,7 +161,7 @@ else:
 if sum_total > new_sum_total:
     multiplier = sum_total / new_sum_total
     for order in new_orders:
-        order["price"] = order["price"] * multiplier + exchange.min_price
+        order["price"] = exchange.round(order["price"] * multiplier + exchange.min_price, "price")
 
     print("POTENTIAL NEW MULTIPLIED SELL ORDERS")
     _, _, _, _ = print_orders(new_orders)
