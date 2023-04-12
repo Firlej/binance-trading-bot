@@ -29,16 +29,21 @@ def log_error(e, name):
     ''')
 
 
-def log_order(o):
+def log_order(o, o_prev = None):
     """
     Log an order to the console
     """
 
     amount = o["amount"] if o["amount"] else o["filled"]
     value = o["price"] * o["amount"]
+    
+    profit = "X"
+    if o_prev is not None:
+        value_prev = o_prev["price"] * o_prev["amount"]
+        profit = value - value_prev
 
     print(
-        f'{o["datetime"]} | {o["id"]} | {o["type"].upper():<6} | {o["side"].upper():<4} | {amount:<7} | {o["price"]:<8} | {value:<18} | {o["status"]:<6}'
+        f'{o["datetime"]} | {o["id"]} | {o["type"].upper():<6} | {o["side"].upper():<4} | {amount:<7} | {o["price"]:<8} | {value:<6} | {o["status"]:<6} | Profit: {profit:<6}'
     )
 
 
@@ -70,12 +75,12 @@ class OrderMonitor():
             self.open_orders[open_order["id"]] = open_order
         print(f'{self.exchange.current_timestamp()} | Initialized {len(self.open_orders)} open orders')
 
-    def log(self, order):
+    def log(self, order, order_prev = None):
         """
         Log an order and update the open_orders dict
         """
         id = order["id"]
-        log_order(order)
+        log_order(order, order_prev)
 
         match order["status"]:
 

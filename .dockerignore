@@ -5,6 +5,7 @@ venv
 LICENSE
 README.md
 Dockerfile
+docker-compose.yml
 .gitignore
 .env*
 *.csv

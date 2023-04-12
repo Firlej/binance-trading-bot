@@ -6,6 +6,7 @@ import time
 import os
 import threading
 import signal
+import random
 
 from dotenv import load_dotenv
 import ccxt
@@ -198,8 +199,8 @@ def limit_sell(order):
     """
 
     try:
-
-        sell_price = order["price"] * exchange.scale_by_balance(PROFIT_MARGIN_MIN, PROFIT_MARGIN_MAX)
+        scale = random.uniform(PROFIT_MARGIN_MIN, exchange.scale_by_balance(PROFIT_MARGIN_MIN, PROFIT_MARGIN_MAX))
+        sell_price = order["price"] * scale
         sell_amount = order["filled"]
 
         sell_order = exchange.create_order(
@@ -209,7 +210,7 @@ def limit_sell(order):
             amount=sell_amount,
             price=sell_price)
 
-        order_monitor.log(sell_order)
+        order_monitor.log(sell_order, order)
 
         # if status closed then immediately buy back
         if sell_order["status"] == "closed":
@@ -227,8 +228,9 @@ def limit_buy(order):
     Limit buy the amount of BTC that was sold. Cancel the order if it is not filled within BUY_CANCEL_TIMEOUT.
     """
     try:
-
-        buy_price = order["price"] / exchange.scale_by_balance(PROFIT_MARGIN_MIN, PROFIT_MARGIN_MAX)
+        scale = random.uniform(PROFIT_MARGIN_MIN, exchange.scale_by_balance(PROFIT_MARGIN_MIN, PROFIT_MARGIN_MAX))
+        print(f"Limit buy at {scale} profit margin")
+        buy_price = order["price"] / scale
         buy_amount = exchange.min_order_amount(buy_price)
 
         buy_order = exchange.create_order(
