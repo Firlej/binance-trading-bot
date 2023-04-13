@@ -164,11 +164,11 @@ class ExtendedSymbolExchange(ccxt.binance):
             assert min(x, y) <= scaled_value <= max(x, y)
             return scaled_value
 
-        except ccxt.errors.DDoSProtection as e:
+        except ccxt.errors.NetworkError as e:
             
             log_error(e, "scale_by_balance()")
             print("Retrying in 10 seconds...")
-            time.sleep(30)
+            time.sleep(10)
             
             return self.scale_by_balance(x, y)
 

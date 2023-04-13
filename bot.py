@@ -111,7 +111,7 @@ def process_order_update(order):
 
     except KeyError:
         pass
-    except Exception as e:
+    except ccxt.errors.NetworkError as e:
         # all kinds of network errors can happen here. log them so they can be
         # examined later
         log_error(e, "process_order_update")
