@@ -229,7 +229,6 @@ def limit_buy(order):
     """
     try:
         scale = random.uniform(PROFIT_MARGIN_MIN, exchange.scale_by_balance(PROFIT_MARGIN_MIN, PROFIT_MARGIN_MAX))
-        print(f"Limit buy at {scale} profit margin")
         buy_price = order["price"] / scale
         buy_amount = exchange.min_order_amount(buy_price)
 
