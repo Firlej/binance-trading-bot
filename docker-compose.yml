@@ -18,3 +18,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+  bot-max:
+    image: binance-trading-bot
+    container_name: bot-max
+    env_file: .env.max
+    network_mode: host
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile
