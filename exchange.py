@@ -57,6 +57,10 @@ class ExtendedSymbolExchange(ccxt.binance):
         """
         max_num_orders = next((f['maxNumOrders'] for f in self.m["info"]["filters"] if f['filterType'] == 'MAX_NUM_ORDERS'), None)
         return int(max_num_orders)
+    
+    def get_best_bid_ask(self):
+        order_book = self.fetch_order_book(symbol=self.s, limit=5)
+        return order_book['bids'][0][0], order_book['asks'][0][0]
 
     # wrapper for create_order() that retries on network errors
     def create_order(self, symbol, type, side, amount, price=None, params={}):
