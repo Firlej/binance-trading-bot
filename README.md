@@ -23,9 +23,9 @@ pip install -r requirements.txt
 
 Stop and remove containers, rebuild new images, run new containers, 
 ```bash
-docker-compose down --remove-orphans
-docker-compose up --build --always-recreate-deps --detach --force-recreate
-docker-compose logs --follow --timestamps
+sudo docker-compose down --remove-orphans
+sudo docker-compose up --build --always-recreate-deps --detach --force-recreate
+sudo docker-compose logs --follow --timestamps
 ```
 
 bash into container

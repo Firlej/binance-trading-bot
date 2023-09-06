@@ -11,7 +11,7 @@ pprint.PrettyPrinter(indent=4)
 pp = pprint.pprint
 
 # load the .env file
-load_dotenv(".env.o")
+load_dotenv(".env.max")
 
 symbol = os.getenv("SYMBOL")
 
