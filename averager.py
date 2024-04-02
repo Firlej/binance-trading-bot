@@ -1,5 +1,6 @@
 import os
 import pprint
+import numpy as np
 
 from dotenv import load_dotenv
 
@@ -11,7 +12,7 @@ pprint.PrettyPrinter(indent=4)
 pp = pprint.pprint
 
 # load the .env file
-load_dotenv(".env.max")
+load_dotenv(".env.o")
 
 symbol = os.getenv("SYMBOL")
 
@@ -63,7 +64,9 @@ def print_orders(orders):
     sum_total = exchange.round(sum_total, "quote")
 
     prices = [order['price'] for order in orders]
-
+    if len(prices) == 0:
+        prices = [0]
+    
     min_price = exchange.round(min(prices), "price")
     max_price = exchange.round(max(prices), "price")
 
@@ -77,29 +80,24 @@ def print_orders(orders):
 
 
 def get_new_orders(n, sum_amount, min_price, max_price, set_amount=None):
-    spread = max_price - min_price
-    spread_per_order = spread / (n - 1)
-
-    new_orders = []
-
-    price = max_price
-    for _ in range(n):
-
-        amount = exchange.min_order_amount(price) if set_amount is None else set_amount
-
-        new_orders.append({
-            "price": exchange.round(price + exchange.min_price, "price"),
-            "amount": exchange.round(amount, "amount")
-        })
-
-        price -= spread_per_order
-        price = exchange.round(price, "price")
-        sum_amount -= amount
-        sum_amount = exchange.round(sum_amount, "amount")
-
-    # add the remaining amount to the first order
-    new_orders[0]["amount"] += sum_amount
-
+    
+    prices = np.linspace(min_price, max_price, num=n)
+    prices = [exchange.round(p, "price") for p in prices]
+    
+    new_orders = [
+        {
+            "price": exchange.round(p + exchange.min_price, "price"),
+            "amount": exchange.round(exchange.min_order_amount(p) if set_amount is None else set_amount, "amount")
+        } for p in prices
+    ]
+    
+    for o in new_orders:
+        assert o["amount"] * o["price"] >= exchange.min_cost
+        # print(o["amount"], o["price"], o["amount"] * o["price"])
+    
+    sum_amount_new = exchange.round(sum([order["amount"] for order in new_orders]), "amount")
+    new_orders[0]["amount"] += max(0, sum_amount - sum_amount_new)
+    
     return new_orders
 
 
@@ -111,7 +109,7 @@ def replace_orders(orders, orders_new):
     # sum_amount_new = exchange.round(sum_amount_new, "amount")
 
     print(f"Are sum_amount and sum_amount_new equal? {sum_amount} {sum_amount_new}")
-    assert sum_amount == sum_amount_new, f"Sum amount must be equal | {sum_amount} != {sum_amount_new}"
+    assert sum_amount >= sum_amount_new, f"Sum amount must be higher or equal | {sum_amount} !>= {sum_amount_new}"
 
     sum_value = sum([order["price"] * order["amount"] for order in orders])
     sum_value_new = sum([order["price"] * order["amount"] for order in orders_new])
@@ -124,6 +122,8 @@ def replace_orders(orders, orders_new):
 
     # create new orders
     for order in orders_new:
+        
+        print(f"{symbol} limit sell {order["amount"]} {order["price"]} ")
 
         exchange.create_order(
             symbol=symbol, type="limit", side="sell", amount=order["amount"], price=order["price"]
@@ -131,6 +131,8 @@ def replace_orders(orders, orders_new):
 
 ############################################
 
+
+# if __name__ == "__main__":
 
 print("CURRENT SELL ORDERS")
 orders = exchange.open_sell_orders()
@@ -144,10 +146,20 @@ if n > max_num_orders:
     print(f"Number of orders {n} is greater than max number of orders {max_num_orders} \n")
 
     n = int(max_num_orders * 0.8)
+    
     set_amount = exchange.round(sum_amount / n, "amount")
 
     print("POTENTIAL NEW SELL ORDERS")
     new_orders = get_new_orders(n, sum_amount, min_price, max_price, set_amount=set_amount)
+    
+    
+    sum_amount = exchange.round(sum([order["amount"] for order in orders]), "amount")
+    sum_amount_new = exchange.round(sum([order["amount"] for order in new_orders]), "amount")
+    if sum_amount < sum_amount_new:
+        print("BAD EQUALSSS", sum_amount >= sum_amount_new, sum_amount, sum_amount_new, "DEACREASE set_amount")
+        set_amount -= exchange.min_amount
+        new_orders = get_new_orders(n, sum_amount, min_price, max_price, set_amount=set_amount)
+        
     _, new_sum_total, _, _ = print_orders(new_orders)
 
 else:
