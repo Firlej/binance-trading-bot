@@ -13,7 +13,7 @@ cp .env.example .env
 rm -rf venv 
 python3 -m venv venv
 source venv/bin/activate
-pip install ccxt asyncio python-dotenv numpy
+pip install ccxt asyncio python-dotenv numpy pandas --upgrade
 pip freeze > requirements.txt
 ```
 
