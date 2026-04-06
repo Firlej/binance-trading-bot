@@ -3,17 +3,25 @@ This is a simple bot that periodically markets buys and sells on the Binance exc
 """
 
 import time
-import os
 import threading
 import signal
 import random
 
-from dotenv import load_dotenv
 import ccxt
 
 
-from helpers import OrderMonitor, log_error
-from exchange import ExtendedSymbolExchange
+from order_monitor import OrderMonitor
+from utils import log_error
+from averager import rebalance_sell_orders
+from config import (
+    SYMBOL as symbol,
+    SLEEP_MIN,
+    SLEEP_MAX,
+    PROFIT_MARGIN_MIN,
+    PROFIT_MARGIN_MAX,
+    BUY_CANCEL_TIMEOUT,
+    exchange,
+)
 
 ############################################
 
@@ -33,28 +41,10 @@ signal.signal(signal.SIGTERM, end)
 
 ############################################
 
-# load the .env file
-load_dotenv()
-
-symbol = os.getenv("SYMBOL")
-
-SLEEP_MIN = int(os.getenv("SLEEP_MIN"))
-SLEEP_MAX = int(os.getenv("SLEEP_MAX"))
-
-PROFIT_MARGIN_MIN = float(os.getenv("PROFIT_MARGIN_MIN"))
-PROFIT_MARGIN_MAX = float(os.getenv("PROFIT_MARGIN_MAX"))
-
-BUY_CANCEL_TIMEOUT = float(os.getenv("BUY_CANCEL_TIMEOUT"))
-
 print(f"SLEEP_MIN: {SLEEP_MIN} SLEEP_MAX: {SLEEP_MAX}")
 print(f"PROFIT_MARGIN_MIN: {PROFIT_MARGIN_MIN} PROFIT_MARGIN_MAX: {PROFIT_MARGIN_MAX}")
 
 ############################################
-
-exchange = ExtendedSymbolExchange(symbol=symbol, config={
-    "apiKey": os.getenv("API_KEY"),
-    "secret": os.getenv("API_SECRET")
-})
 
 order_monitor = OrderMonitor(exchange)
 
@@ -160,7 +150,11 @@ def market_buy():
 
         # place a market buy order for the min amount
         order = exchange.create_order(
-            symbol=symbol, type="market", side="buy", amount=amount
+            symbol=symbol,
+            type="market",
+            side="buy",
+            amount=amount,
+            rebalance_on_max_orders=True
         )
 
         # log the market buy order
@@ -175,21 +169,7 @@ def market_buy():
 
     except ccxt.errors.ExchangeError as e:
 
-        # todo how to catch a error specific to MAX_NUM_ORDERS? instead of this
-        # ugly if statement
-        if str(e) == 'binance {"code":-2010,"msg":"Filter failure: MAX_NUM_ORDERS"}':
-
-            print("MAX_NUM_ORDERS reached. Merging orders...")
-            # todo - check if there are open buy orders and cancel them
-            order_updates = exchange.merge_sell_orders()
-            for order_update in order_updates:
-                order_monitor.log(order_update)
-
-            market_buy()
-
-        else:
-
-            log_error(e, "market_buy")
+        log_error(e, "market_buy")
 
 
 # place a limit sell order for the amount of BTC that was bought
@@ -208,7 +188,9 @@ def limit_sell(order):
             type="limit",
             side="sell",
             amount=sell_amount,
-            price=sell_price)
+            price=sell_price,
+            rebalance_on_max_orders=True
+        )
 
         order_monitor.log(sell_order, order)
 
@@ -219,6 +201,10 @@ def limit_sell(order):
 
     except ccxt.errors.InsufficientFunds:
         print(f'Insufficient funds for limit sell of {sell_amount} at {sell_price} for total: {sell_price * sell_amount}')
+        return
+    
+    except ccxt.errors.ExchangeError as e:
+        log_error(e, "limit_sell")
         return
 
 
@@ -237,7 +223,9 @@ def limit_buy(order):
             type="limit",
             side="buy",
             amount=buy_amount,
-            price=buy_price)
+            price=buy_price,
+            rebalance_on_max_orders=True
+        )
 
         order_monitor.log(buy_order)
 
@@ -251,12 +239,38 @@ def limit_buy(order):
     except ccxt.errors.InsufficientFunds:
         print(f'Insufficient funds for limit buy of {buy_amount} at {buy_price} for total: {buy_price * buy_amount}')
         return
+    
+    except ccxt.errors.ExchangeError as e:
+        log_error(e, "limit_buy")
+        return
 
 
 def main():
     """
     Begin the main loop.
     """
+
+    # Proactive check: rebalance if we're getting close to max orders
+    try:
+        max_orders = exchange.get_max_num_orders()
+        current_sell_orders = len(exchange.open_sell_orders())
+        threshold = int(max_orders * 0.9)  # Rebalance at 90% capacity
+        
+        if current_sell_orders >= threshold:
+            # Try to acquire lock without blocking
+            acquired = exchange._rebalance_lock.acquire(blocking=False)
+            
+            if acquired:
+                try:
+                    print(f"Proactive rebalancing: {current_sell_orders}/{max_orders} orders (threshold: {threshold})")
+                    old_orders, new_orders = rebalance_sell_orders(exchange)
+                    print(f"Rebalanced {len(old_orders)} orders into {len(new_orders)} orders")
+                finally:
+                    exchange._rebalance_lock.release()
+            else:
+                print(f"Proactive rebalancing skipped: {current_sell_orders}/{max_orders} (rebalancing already in progress)")
+    except Exception as check_error:
+        print(f"Error during proactive order check: {check_error}")
 
     print("Starting main loop...")
 

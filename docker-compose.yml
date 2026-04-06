@@ -1,4 +1,3 @@
-version: '3'
 services:
   bot-o:
     image: binance-trading-bot
@@ -9,21 +8,30 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-  bot-m:
+  bot-o-eth:
     image: binance-trading-bot
-    container_name: bot-m
-    env_file: .env.m
+    container_name: bot-o-eth
+    env_file: .env.o.eth
     network_mode: host
     restart: unless-stopped
     build:
       context: .
       dockerfile: Dockerfile
-  bot-max:
-    image: binance-trading-bot
-    container_name: bot-max
-    env_file: .env.max
-    network_mode: host
-    restart: unless-stopped
-    build:
-      context: .
-      dockerfile: Dockerfile
+  # bot-m:
+  #   image: binance-trading-bot
+  #   container_name: bot-m
+  #   env_file: .env.m
+  #   network_mode: host
+  #   restart: unless-stopped
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  # bot-max:
+  #   image: binance-trading-bot
+  #   container_name: bot-max
+  #   env_file: .env.max
+  #   network_mode: host
+  #   restart: unless-stopped
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile

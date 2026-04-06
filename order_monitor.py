@@ -1,50 +1,12 @@
 """
-Helper functions for the bot
+Order monitor: tracks open/closed orders and prints bot status.
 """
 
 import time
 
 import ccxt
 
-
-def map_range(x, a, b, y, z):
-    """
-    Map a value from one range to another
-    """
-    return (x - a) * (z - y) / (b - a) + y
-
-
-def log_error(e, name):
-    """
-    Print a formatted error message to the console
-    """
-    module = e.__module__ if hasattr(e, "__module__") else ""
-    print(f'''
-    Error in {name}:
-    {e.__class__=}
-    {module=}
-    {e.args=}
-    {e.__context__=}
-    Error occured in {e.__traceback__.tb_frame.f_code.co_filename} at line {e.__traceback__.tb_lineno}
-    ''')
-
-
-def log_order(o, o_prev = None):
-    """
-    Log an order to the console
-    """
-
-    amount = o["amount"] if o["amount"] else o["filled"]
-    value = o["price"] * o["amount"]
-    
-    profit = "X"
-    if o_prev is not None:
-        value_prev = o_prev["price"] * o_prev["amount"]
-        profit = value - value_prev
-
-    print(
-        f'{o["datetime"]} | {o["id"]} | {o["type"].upper():<6} | {o["side"].upper():<4} | {amount:<7} | {o["price"]:<8} | {value:<18} | {o["status"]:<6} | Profit: {profit:<18}'
-    )
+from utils import log_error, log_order, map_range
 
 
 class OrderMonitor():
@@ -148,12 +110,19 @@ class OrderMonitor():
             p_max = max(prices) if len(prices) > 0 else 0
             p_min = min(prices) if len(prices) > 0 else 0
 
+            # Calculate price difference percentage (avoid division by zero)
+            if p_min > 0:
+                price_diff_pct = round((p_max - p_min) / p_min * 100, 2)
+                price_info = f"Min: {p_min} | Max: {p_max} | Diff: {round(p_max - p_min, 2)} ({price_diff_pct}%)"
+            else:
+                price_info = "No sell orders"
+
             print(f"""
     {self.exchange.current_timestamp()}
     Available balances | {free_quote:.2f} / {total_quote + sell_base_value:.2f} {self.exchange.quote} ({free_balance_percent:.2f}%) | {sell_base_amount:.5f} {self.exchange.base}
     {self.exchange.base} value          | Expected: {sell_base_value:.2f} | Current: {curr_sell_value:.2f} | Curr loss: {curr_sell_value - sell_base_value:.2f}
     Open orders        | {len(buy_orders)} buy | {len(sell_orders)} sell | {len(orders)} total
-    Sell prices        | Min: {p_min} | Max: {p_max} | Diff: {round(p_max - p_min, 2)} ({round((p_max - p_min) / p_min * 100, 2)}%)
+    Sell prices        | {price_info}
             """)
 
         except Exception as e:

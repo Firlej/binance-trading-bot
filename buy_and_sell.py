@@ -10,21 +10,14 @@ from dotenv import load_dotenv
 import ccxt
 
 
-from helpers import log_order
-from exchange import ExtendedSymbolExchange
+from utils import log_order
 
-# load the .env file
-load_dotenv('.env.o')
-
-symbol = os.getenv("SYMBOL")
-
-exchange = ExtendedSymbolExchange(symbol=symbol, config={
-    "apiKey": os.getenv("API_KEY"),
-    "secret": os.getenv("API_SECRET")
-})
+from config import exchange
 
 price = exchange.price()
 amount = exchange.min_order_amount(price)
+
+symbol = exchange.s
 
 # place a market buy order for the min amount
 order = exchange.create_order(
@@ -33,7 +26,8 @@ order = exchange.create_order(
 
 log_order(order)
 
-sell_price = order["price"] + exchange.min_price
+# sell_price = order["price"] + exchange.min_price
+sell_price = order["price"] * 1.003
 sell_amount = order["filled"]
 
 sell_order = exchange.create_order(

@@ -9,17 +9,13 @@ from ccxt.base.types import OrderBook, Ticker, Balances, Order
 import asyncio
 from dotenv import load_dotenv
 
-from helpers import log_order, log_error
+from utils import log_order, log_error
 
-# load the .env file
-load_dotenv('.env.o')
+from config import EXCHANGE_CONFIGS
 
-symbol = os.getenv("SYMBOL")
+symbol = 'MYST/USDT'
 
-exchange = ccxt.pro.binance({
-    "apiKey": os.getenv("API_KEY"),
-    "secret": os.getenv("API_SECRET")
-})
+exchange = ccxt.pro.mexc(EXCHANGE_CONFIGS["mexc"])
 
 def process_orders_update(orders: List[Order]):
     def process_order_update(order: Order):
@@ -39,10 +35,12 @@ def common_handler(
     # https://docs.ccxt.com/#/ccxt.pro.manual
 
     if orderbook:
-        print(f"OrderBook: ask: {orderbook['asks'][0]}, bid: {orderbook['bids'][0]}")
+        # print(f"OrderBook: ask: {orderbook['asks'][0]}, bid: {orderbook['bids'][0]}")
+        pass
     
     if ticker:
-        print(f"Ticker: {ticker['datetime']}, last_price: {ticker['last']}")
+        # print(f"Ticker: {ticker['datetime']}, last_price: {ticker['last']}")
+        pass
     
     if balances:
         print(f"{balances['balance']=}")
@@ -115,7 +113,7 @@ async def main():
     except KeyboardInterrupt:
         pass
     except Exception as e:
-        print(type(e).__name__, str(e))
+        print("ERROR", type(e).__name__, str(e))
     finally:
         await exchange.close()
 

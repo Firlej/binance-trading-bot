@@ -1,5 +1,4 @@
 import time
-import os
 import csv
 import json
 import threading
@@ -8,21 +7,11 @@ import ccxt
 import ccxt.pro as ccxtpro
 import asyncio
 
-from dotenv import load_dotenv
+from config import EXCHANGE_CONFIGS
 
+exchange = ccxt.binance(config=EXCHANGE_CONFIGS["binance"])
+exchangepro = ccxtpro.binance(config=EXCHANGE_CONFIGS["binance"])
 
-# load the .env file
-load_dotenv()
-
-exchange = ccxt.binance(config={
-    "apiKey": os.getenv("API_KEY"),
-    "secret": os.getenv("API_SECRET")
-})
-
-exchangepro = ccxtpro.binance(config={
-    "apiKey": os.getenv("API_KEY"),
-    "secret": os.getenv("API_SECRET")
-})
 
 SYMBOL = "BTC/BUSD"
 

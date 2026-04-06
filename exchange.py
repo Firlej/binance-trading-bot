@@ -5,16 +5,22 @@ Implementation of the ExtendedSymbolExchange class.
 import math
 import time
 import requests
+import threading
 
 import numpy as np
 import ccxt
 
-from helpers import log_error, map_range
+from utils import calculate_min_order_amount, log_error, map_range
+
 
 class ExtendedSymbolExchange(ccxt.binance):
     """
     Wrapper class for ccxt.binance that adds some extra functionality.
     """
+    # Class-level lock for rebalancing operations (shared across all instances)
+    _rebalance_lock = threading.Lock()
+    _rebalance_local = threading.local()
+    
     def __init__(self, symbol, config):
 
         super().__init__(config)
@@ -46,10 +52,17 @@ class ExtendedSymbolExchange(ccxt.binance):
         """
         Round x to the specified decimal precision. Used to round amounts and prices.
         """
-        # {'amount': 5, 'base': 8, 'price': 2, 'quote': 8}
+        # precision values are step sizes (e.g., {'amount': 1e-05, 'price': 0.01})
         assert precision in self.precision.keys(), f"precision must be one of {self.precision.keys()}"
-
-        return round(x, self.precision[precision])
+        
+        step_size = self.precision[precision]
+        if step_size is None or step_size == 0:
+            return x
+        
+        # Convert step size to decimal places
+        # e.g., 1e-05 -> 5 decimal places, 0.01 -> 2 decimal places
+        decimal_places = int(round(-math.log10(step_size)))
+        return round(x, decimal_places)
 
     def get_max_num_orders(self):
         """
@@ -62,11 +75,105 @@ class ExtendedSymbolExchange(ccxt.binance):
         order_book = self.fetch_order_book(symbol=self.s, limit=5)
         return order_book['bids'][0][0], order_book['asks'][0][0]
 
+    def handle_max_orders_error(self):
+        """
+        Handle MAX_NUM_ORDERS error by rebalancing orders.
+        Thread-safe: Uses a lock to ensure only one rebalancing operation runs at a time.
+        
+        Returns:
+            bool: True if successful, False if error occurred or already rebalancing
+        """
+        # Try to acquire the lock without blocking
+        acquired = self._rebalance_lock.acquire(blocking=False)
+        
+        if not acquired:
+            # Another thread is already rebalancing
+            print("MAX_NUM_ORDERS reached, but rebalancing already in progress. Waiting...")
+            
+            # Wait for the other rebalancing to complete
+            with self._rebalance_lock:
+                # Lock acquired, other thread finished
+                print("Previous rebalancing completed. Checking if retry is still needed...")
+                
+                # Check if we still need to rebalance
+                current_orders = len(self.open_sell_orders())
+                max_orders = self.get_max_num_orders()
+                
+                if current_orders < max_orders * 0.85:  # If below 85%, we're good
+                    print(f"Order count now at {current_orders}/{max_orders} (safe). No rebalancing needed.")
+                    return True
+                else:
+                    print(f"Order count still high at {current_orders}/{max_orders}. Proceeding with rebalancing...")
+                    # Fall through to rebalance
+        
+        try:
+            # We have the lock, proceed with rebalancing
+            if acquired:
+                print("MAX_NUM_ORDERS reached. Starting rebalancing...")
+                self._rebalance_local.active = True
+            
+            # Cancel any open buy orders first to free up slots
+            buy_orders = self.open_buy_orders()
+            if buy_orders:
+                print(f"Cancelling {len(buy_orders)} open buy orders...")
+                for order in buy_orders:
+                    try:
+                        self.cancel_order(order['id'], symbol=self.s)
+                    except Exception as cancel_error:
+                        print(f"Error cancelling buy order: {cancel_error}")
+            
+            # Rebalance sell orders to 80% of max limit
+            try:
+                # Import here to avoid circular dependency
+                from averager import rebalance_sell_orders
+                old_orders, new_orders = rebalance_sell_orders(self)
+                print(f"Rebalanced {len(old_orders)} orders into {len(new_orders)} orders")
+                
+                # Verify we're below the limit
+                max_orders = self.get_max_num_orders()
+                if len(new_orders) >= max_orders:
+                    print(f"WARNING: Still at or above max orders ({len(new_orders)}/{max_orders})")
+                    return False
+                else:
+                    print(f"Successfully reduced orders to {len(new_orders)}/{max_orders} (safe)")
+                    return True
+                    
+            except Exception as rebalance_error:
+                print(f"Error during rebalancing: {rebalance_error}")
+                log_error(rebalance_error, "rebalance_sell_orders")
+                return False
+                
+        finally:
+            # Always release the lock if we acquired it
+            if acquired:
+                self._rebalance_local.active = False
+                self._rebalance_lock.release()
+                print("Rebalancing lock released.")
+
     # wrapper for create_order() that retries on network errors
-    def create_order(self, symbol, type, side, amount, price=None, params={}):
+    def create_order(self, symbol, type, side, amount, price=None, params={}, rebalance_on_max_orders=True):
         """
-        Wrapper for create_order() that retries on transient network errors.
+        Wrapper for create_order() that retries on transient network errors and handles MAX_NUM_ORDERS.
+        
+        Args:
+            symbol: Trading pair symbol
+            type: Order type (market, limit)
+            side: Order side (buy, sell)
+            amount: Order amount
+            price: Order price (optional for market orders)
+            params: Additional parameters
+            rebalance_on_max_orders: If True, automatically rebalance when MAX_NUM_ORDERS is reached (default: True)
+        
+        Returns:
+            Order object from the exchange
         """
+
+        # If another thread is rebalancing, block until it completes.
+        # The rebalance thread itself is allowed to place/cancel orders while holding the lock.
+        if self._rebalance_lock.locked() and not getattr(self._rebalance_local, "active", False):
+            print("Rebalancing in progress. Waiting before placing order...")
+            with self._rebalance_lock:
+                pass
 
         try:
 
@@ -77,6 +184,37 @@ class ExtendedSymbolExchange(ccxt.binance):
                 amount=amount,
                 price=price,
                 params=params)
+
+        except ccxt.errors.ExchangeError as e:
+            
+            # Check if max orders limit was reached
+            if str(e) == 'binance {"code":-2010,"msg":"Filter failure: MAX_NUM_ORDERS"}':
+                
+                if rebalance_on_max_orders:
+                    print(f"MAX_NUM_ORDERS error while trying to {type} {side} {amount} {self.base}")
+                    
+                    # Try to rebalance
+                    if self.handle_max_orders_error():
+                        # Retry the order after successful rebalancing
+                        print(f"Retrying {type} {side} order after rebalancing...")
+                        return self.create_order(
+                            symbol=symbol,
+                            type=type,
+                            side=side,
+                            amount=amount,
+                            price=price,
+                            params=params,
+                            rebalance_on_max_orders=False  # Don't rebalance again on retry
+                        )
+                    else:
+                        print("Rebalancing failed, cannot place order")
+                        raise e
+                else:
+                    # Rebalancing disabled or already tried, re-raise the error
+                    raise e
+            else:
+                # Other exchange errors, re-raise
+                raise e
 
         except (ccxt.errors.NetworkError, ccxt.errors.InvalidOrder, ccxt.errors.DDoSProtection, requests.exceptions.HTTPError) as e:
 
@@ -91,7 +229,9 @@ class ExtendedSymbolExchange(ccxt.binance):
                 side=side,
                 amount=amount,
                 price=price,
-                params=params)
+                params=params,
+                rebalance_on_max_orders=rebalance_on_max_orders
+            )
 
     def price(self):
         """
@@ -105,8 +245,7 @@ class ExtendedSymbolExchange(ccxt.binance):
         """
         if price is None:
             price = self.price()
-        min_cost = self.min_cost + self.min_price
-        return math.ceil(min_cost / price / self.min_amount) * self.min_amount
+        return calculate_min_order_amount(price, self.min_cost, self.min_price, self.min_amount)
 
     def open_orders(self):
         """
@@ -165,7 +304,9 @@ class ExtendedSymbolExchange(ccxt.binance):
             # concatenate str (not "float") to str``
             scaled_value = map_range(free_quote, 0, total_quote + sell_base_value, x, y)
 
-            assert min(x, y) <= scaled_value <= max(x, y)
+            # Clamp to handle floating-point precision issues
+            scaled_value = max(min(x, y), min(scaled_value, max(x, y)))
+            
             return scaled_value
 
         except ccxt.errors.NetworkError as e:
