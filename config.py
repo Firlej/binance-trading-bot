@@ -45,7 +45,7 @@ def _optional(name: str) -> Optional[str]:
     return value if value not in (None, "") else None
 
 
-load_dotenv('.env.o')
+load_dotenv()
 
 # Credentials (required)
 API_KEY: str = _optional("API_KEY")

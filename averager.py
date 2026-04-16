@@ -152,7 +152,7 @@ def rebalance_sell_orders(exchange_instance=None):
         exchange.min_price,
         exchange.min_amount,
     )
-    n = min(len(orders), n)
+    # n = min(len(orders), n)
 
     max_num_orders = exchange.get_max_num_orders()
 
